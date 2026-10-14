@@ -15,6 +15,7 @@ const { deriveTrackSegments } = require('../analysis/corners');
 const E = require('../engineer/engine');
 const FB = require('../engineer/feedback');
 const { planRace } = require('../strategy/planner');
+const DEG = require('../analysis/degradation');
 const { assessLive } = require('../strategy/live');
 
 const rows = async (con, sql, params) =>
@@ -162,6 +163,58 @@ async function pastAdvice(con, { lapId }) {
     }));
 }
 
+/**
+ * Wear and degradation for a session's stint.
+ *
+ * Lap fuel comes from the sample stream rather than the laps table, because
+ * fuel_used_l is only populated once a stint is closed and the correction
+ * needs a value for every lap as it happens.
+ */
+async function degradation(con, { sessionId, fuelEffectSPerL, wearLimit } = {}) {
+    if (!UUID_RE.test(String(sessionId))) throw new Error('sessionId is not a UUID');
+
+    const lapRows = await rows(con, `
+        SELECT l.lap_id, l.lap_num, l.lap_time_s, l.valid, l.is_out_lap, l.is_in_lap,
+               (SELECT max(s.fuel_l) FROM samples s WHERE s.lap_id = l.lap_id) AS fuel_l,
+               (SELECT avg(s.tyre_wear_fl) FROM samples s WHERE s.lap_id = l.lap_id) AS fl,
+               (SELECT avg(s.tyre_wear_fr) FROM samples s WHERE s.lap_id = l.lap_id) AS fr,
+               (SELECT avg(s.tyre_wear_rl) FROM samples s WHERE s.lap_id = l.lap_id) AS rl,
+               (SELECT avg(s.tyre_wear_rr) FROM samples s WHERE s.lap_id = l.lap_id) AS rr
+        FROM laps l WHERE l.session_id = '${sessionId}' ORDER BY l.lap_num
+    `);
+
+    const laps = lapRows.map((r, i) => ({
+        stintLap: i + 1,
+        lapNum: Number(r.lap_num),
+        lapTimeS: n(r.lap_time_s),
+        fuelL: n(r.fuel_l),
+        valid: r.valid === true,
+        isOutLap: r.is_out_lap === true,
+        isInLap: r.is_in_lap === true,
+    }));
+
+    const wear = lapRows.map((r, i) => ({
+        stintLap: i + 1, fl: n(r.fl), fr: n(r.fr), rl: n(r.rl), rr: n(r.rr),
+    }));
+
+    const model = DEG.fitDegradation(laps, fuelEffectSPerL == null ? {} : { fuelEffectSPerL });
+    const wearProj = DEG.wearProjection(wear, wearLimit == null ? {} : { wearLimit });
+
+    return {
+        model: {
+            degSPerLap: model.degSPerLap, baseLapS: model.baseLapS, r2: model.r2,
+            lapsUsed: model.lapsUsed, dropped: model.dropped,
+            fuelCorrected: model.fuelCorrected, warning: model.warning, cliff: model.cliff,
+        },
+        wear: wearProj,
+        laps: (model.corrected ?? []).map((l) => ({
+            stintLap: l.stintLap, lapTimeS: l.lapTimeS, correctedS: l.correctedS, fuelL: l.fuelL,
+        })),
+    };
+}
+
+function optimalStint(_con, params) { return DEG.optimalStintLaps(params); }
+
 const recordFeedback = (con, opts) => FB.recordFeedback(con, opts);
 const ruleScores = (con) => FB.ruleScores(con);
 
@@ -172,7 +225,7 @@ function strategyLive(_con, params) { return assessLive(params); }
 const API = {
     listSessions, listLaps, lapTrace, lapDelta, trackSegments, segmentLosses,
     deriveSegments, runEngineer, pastAdvice, recordFeedback, ruleScores,
-    strategy, strategyLive,
+    strategy, strategyLive, degradation, optimalStint,
 };
 
 /** Names the preload bridge exposes; keeps main and renderer in step. */

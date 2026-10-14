@@ -128,6 +128,13 @@ function* syntheticFrames({
 
     for (let lap = 1; lap <= laps; lap++) {
         const lapStartET = elapsed;
+        // Tyres give up gradually; the car gets lighter as fuel burns. The two
+        // pull lap time in opposite directions, which is exactly why the
+        // degradation fit has to correct for fuel before it means anything.
+        const tyreAge = lap - 1;
+        const gripLoss = 1 - tyreAge * 0.0022;                 // ~0.2% a lap
+        const fuelNow = 60 - tyreAge * 4;
+        const weightFactor = 1 + (fuelNow - 40) * 0.00035;     // heavy = slower
         let dist = 0;
         let v = lap === 1 ? 25 : 70;          // rolling start, then flying
         let lastScoringDist = null;
@@ -135,7 +142,7 @@ function* syntheticFrames({
         while (dist < track.lengthM) {
             // Next corner ahead, and whether we must be braking for it yet.
             const next = track.corners.find((c) => c.dist > dist);
-            const target = next ? next.speed * skill : track.vMax;
+            const target = next ? next.speed * skill * gripLoss : track.vMax;
             const gap = next ? next.dist - dist : Infinity;
             const brakingDist = Math.max(0, (v * v - target * target) / (2 * track.decel));
 
@@ -144,7 +151,7 @@ function* syntheticFrames({
                 v = Math.max(target, v - track.decel * dt);
                 brake = Math.min(1, (v - target) / 20 + 0.35);
             } else if (v < track.vMax) {
-                v = Math.min(track.vMax, v + track.accel * dt);
+                v = Math.min(track.vMax, v + (track.accel / weightFactor) * dt);
                 throttle = 1;
             } else {
                 throttle = 0.85;
@@ -167,7 +174,7 @@ function* syntheticFrames({
                 lapNumber: lap,
                 lastLapTime,
                 lapDist: emitScoring ? lastScoringDist : undefined,
-                inPits: false,
+                inPits: lap === 1 && dist < 150,
 
                 speed: v,
                 unfilteredThrottle: throttle,
@@ -184,10 +191,13 @@ function* syntheticFrames({
 
                 conditions: weatherAt(elapsed, weatherState),
 
-                wheels: [0, 1, 2, 3].map((i) => ({
+                // Wheel order fl, fr, rl, rr. The front-left works hardest on
+                // a clockwise circuit, so it wears fastest and limits the stint
+                // -- which is what wearProjection should find.
+                wheels: [0.0190, 0.0150, 0.0120, 0.0125].map((rate, i) => ({
                     tempInner: 273.15 + 88 + i, tempCenter: 273.15 + 92 + i, tempOuter: 273.15 + 85 + i,
                     pressure: 165 + i, brakeTemp: 273.15 + 420 + i * 10,
-                    wear: 1 - (lap - 1) * 0.015 - (dist / track.lengthM) * 0.015,
+                    wear: Math.max(0, 1 - ((lap - 1) + dist / track.lengthM) * rate),
                     suspensionDeflection: 0.02, rideHeight: 0.055,
                 })),
             };

@@ -254,3 +254,20 @@ table.standings tr.my-class td:nth-child(2) { color: #fff; }
 .tyre-reasons { margin: 7px 0 0; padding-left: 15px; font-size: 11px; color: #9fb0c4; }
 .tyre-reasons li { margin-bottom: 3px; }
 .crossover { display: flex; gap: 12px; margin-top: 7px; font-size: 10px; color: var(--suggest); }
+
+/* ---------- degradation ---------- */
+.deg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.deg-opt { text-align: right; }
+.deg-opt b { font-size: 20px; display: block; }
+.deg-warn { margin-top: 8px; font-size: 11px; color: var(--suggest);
+            border-left: 2px solid var(--suggest); padding-left: 8px; }
+.deg-cliff { margin-top: 8px; font-size: 12px; color: var(--loss);
+             background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.3);
+             border-radius: 5px; padding: 7px 9px; }
+
+.wear-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wear-cell { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.wear-cell.limiting { border-color: var(--suggest); }
+.wear-bar { height: 10px; background: #0a0c10; border-radius: 3px; overflow: hidden; margin: 5px 0 4px; }
+.wear-bar i { display: block; height: 100%; }
+.wear-nums { font-size: 12px; }

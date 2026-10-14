@@ -18,8 +18,9 @@ const { normalizeConditions } = require('../src/ingest/normalize');
 const CONDITIONS_EVERY_S = 2;
 
 const DRIVERS = [
-    { driver: 'Krisztian', skill: 1.000, laps: 6 },
-    { driver: 'Reference', skill: 1.035, laps: 4 },
+    // A proper stint: degradation needs laps before it means anything.
+    { driver: 'Krisztian', skill: 1.000, laps: 16 },
+    { driver: 'Reference', skill: 1.035, laps: 5 },
 ];
 
 async function main() {

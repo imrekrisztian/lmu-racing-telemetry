@@ -521,3 +521,41 @@ window sits at maximum leverage and flattens a real trend to "steady", which in
 the crossover band flips the tyre call. Theil–Sen's ~29% breakdown point means
 a handful of bad reads cannot move it, and the window is small enough that the
 O(n²) cost is irrelevant.
+
+### Tyre wear and degradation
+
+Two different quantities, and conflating them is the usual error:
+
+| | What it is | What it answers |
+|---|---|---|
+| **Wear** | rubber gone, from `tyre_wear` (0..1, 1.0 = new) | when the tyre is finished |
+| **Degradation** | lap time lost as the tyre gives up | when *stopping* is worth the pit loss |
+
+A tyre can be 60% worn and still quick, or barely worn and three tenths off
+because it is overheating. Both are modelled.
+
+**The correction that makes it work.** Raw lap times over a stint mix two
+opposing effects: tyres degrade (slower) while fuel burns off (faster). On a
+Hypercar shedding 4 L a lap at ~0.035 s/L, the fuel effect is worth 0.14 s/lap
+— which very nearly cancels typical degradation. Fit raw times and the tyres
+appear to be *improving*. The test asserts exactly that: the uncorrected fit
+comes out **negative** on a stint with 0.05 s/lap of real degradation.
+
+Visible in the demo data: raw lap times drift 209.82 → 209.92 and look flat,
+while fuel-corrected reveal 0.12 s/lap.
+
+Where fuel data is missing the figure is **flagged**, not quietly returned —
+an uncorrected number is not degradation and should not be presented as it.
+
+Other details that earn their place:
+
+- **Slow outliers only.** Traffic and mistakes cost time; nobody is accidentally
+  fast. The fit drops laps more than 2σ slow and refits, keeping quick ones.
+- **Out and in laps never enter the fit.**
+- **A cliff is degradation *accelerating*, not merely being high.** The last
+  third of the stint is fitted against the first two thirds, because a linear
+  fit averages a sudden fall-away into something reassuring and wrong.
+- **Per-wheel wear** names the limiting corner — the fastest-wearing tyre sets
+  the stint, and which corner it is tells you about setup.
+- **Optimal stint length** minimises `pitLoss/n + base + deg*(n-1)/2`, giving
+  `n = sqrt(2·pitLoss/deg)`, capped by what fuel and tyres physically allow.

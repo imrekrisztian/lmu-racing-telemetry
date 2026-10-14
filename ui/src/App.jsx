@@ -119,7 +119,7 @@ export default function App() {
                                             carClass={sessions[0]?.car_class ?? 'Hyper'} />}
                     {tab === 'compare' && <Compare track={track} lapA={a} lapB={b} />}
                     {tab === 'engineer' && <Engineer track={track} lapA={a} lapB={b} laps={laps} />}
-                    {tab === 'strategy' && <Strategy />}
+                    {tab === 'strategy' && <Strategy sessionId={a?.session_id ?? sessions[0]?.session_id} />}
                 </div>
             </main>
         </div>
