@@ -289,3 +289,19 @@ tr.handover-row td { border-top: 1px solid rgba(245,158,11,.35); }
 button.act.primary { border-color: var(--mine); color: #fff; background: rgba(56,189,248,.14); }
 button.act.primary:disabled { border-color: var(--line); color: var(--muted); background: none; }
 .sep { display: inline-block; width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+
+/* ---------- auto logging ---------- */
+.autolog {
+    display: flex; align-items: center; gap: 7px; cursor: pointer;
+    font-size: 11px; padding: 6px 8px; border-radius: 5px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--muted);
+    margin-bottom: 8px;
+}
+.autolog:hover { border-color: var(--mine); }
+.autolog .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+.autolog.watching { color: var(--suggest); border-color: rgba(245,158,11,.35); }
+.autolog.watching .dot { background: var(--suggest); animation: pulse 2s ease-in-out infinite; }
+.autolog.logging { color: var(--gain); border-color: rgba(34,197,94,.45); background: rgba(34,197,94,.07); }
+.autolog.logging .dot { background: var(--gain); animation: pulse 1.1s ease-in-out infinite; }
+.autolog b { color: var(--text); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }

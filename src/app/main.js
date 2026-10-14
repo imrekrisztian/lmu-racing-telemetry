@@ -16,6 +16,7 @@ const { ReplaySource } = require('../live/replay');
 const { LiveSession } = require('../live/session');
 const { loadReference } = require('../live/reference');
 const { ShmSource, available: liveAvailable } = require('../live/shm-source');
+const { AutoLogger } = require('../live/auto-logger');
 const { LapTracker } = require('../ingest/lap-tracker');
 const { Writer } = require('../ingest/writer');
 const { StandingsTracker } = require('../live/standings');
@@ -41,6 +42,7 @@ function databasePath() {
 // swappable -- replay here, the shared-memory reader on Windows -- and the
 // renderer cannot tell the difference.
 let liveSource = null;
+let autoLogger = null;
 
 function stopLive() {
     liveSource?.stop();
@@ -68,6 +70,28 @@ function sendToRenderer(channel, payload) {
     }
 }
 
+/**
+ * Automatic logging.
+ *
+ * Armed at startup rather than on request: a telemetry tool you have to
+ * remember to arm is one that misses the lap you wanted. It watches for the
+ * sim, records when it appears, and goes back to watching when it goes away.
+ */
+function startAutoLogger() {
+    autoLogger = new AutoLogger(con, {
+        onStatus: (s) => sendToRenderer('autolog:status', s),
+        onTick: (snap) => sendToRenderer('live:tick', snap),
+        onLap: (l) => sendToRenderer('live:lap', l),
+    });
+    autoLogger.arm();
+}
+
+function registerAutoLogHandlers() {
+    ipcMain.handle('autolog:status', async () => ({ ok: true, value: autoLogger?.status ?? { state: 'off' } }));
+    ipcMain.handle('autolog:arm', async () => ({ ok: true, value: autoLogger?.arm() ?? null }));
+    ipcMain.handle('autolog:disarm', async () => ({ ok: true, value: autoLogger?.disarm() ?? null }));
+}
+
 function registerLiveHandlers() {
     ipcMain.handle('live:available', async () => ({ ok: true, value: liveAvailable() }));
 
@@ -84,6 +108,8 @@ function registerLiveHandlers() {
             if (!check.ok) return { ok: false, error: check.reason };
 
             stopLive();
+            // Both would open the same mapping and fight over it.
+            autoLogger?.disarm();
             const reference = referenceLapId
                 ? await loadReference(con, { lapId: referenceLapId }) : null;
             const session = new LiveSession({ reference });
@@ -337,6 +363,11 @@ app.whenReady().then(async () => {
     registerHandlers();
     registerLiveHandlers();
     registerFileHandlers();
+    registerAutoLogHandlers();
+    // Armed BEFORE the window exists. Arming afterwards races the renderer's
+    // first status query, which then reads "off" and shows the indicator dark
+    // even though logging is in fact armed.
+    startAutoLogger();
     await createWindow();
 
     app.on('activate', () => {
@@ -345,6 +376,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+    autoLogger?.disarm();
     stopLive();
     try { con?.closeSync(); } catch { /* already gone */ }
     if (process.platform !== 'darwin') app.quit();

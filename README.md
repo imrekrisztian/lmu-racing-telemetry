@@ -801,3 +801,30 @@ The probe now validates **every** field the live reader depends on — speed,
 gear, RPM, throttle, brake, steering, fuel, brake bias, water temperature — so
 a layout mismatch is caught there rather than showing up as a believable but
 wrong dashboard.
+
+## Automatic logging
+
+The app arms itself at startup and watches for the sim. When LMU begins
+publishing it connects, records, and goes back to watching when the sim goes
+away — so going on track is the only action required. A telemetry tool you have
+to remember to arm is one that misses the lap you actually wanted.
+
+The indicator in the sidebar shows which state it is in, and clicking it
+toggles logging off and on:
+
+| | |
+|---|---|
+| ● Watching for the sim | armed, LMU not publishing yet |
+| ● Logging **Le Mans** · 4 laps | connected and recording |
+| ● Auto-logging off | disabled |
+
+A **track or car change opens a new session** rather than extending the current
+one — lumping a Le Mans run and a Monza run together makes every per-track
+query wrong.
+
+**Track setup happens by itself.** Corner detection, time-loss attribution and
+the track map all need segments, and those used to be produced only by the seed
+script — so a new circuit gave you a dashboard with no corners in it and no
+explanation. The first clean lap now derives them automatically, choosing the
+*fastest* clean lap, because segments taken from a lap with an off would bake
+that line into the circuit permanently.

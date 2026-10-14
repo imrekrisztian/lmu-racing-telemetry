@@ -19,6 +19,7 @@ export default function App() {
     const [refFile, setRefFile] = useState(null);
     const [refLaps, setRefLaps] = useState([]);
     const [busy, setBusy] = useState(null);
+    const [autoLog, setAutoLog] = useState(null);
     const [error, setError] = useState(null);
 
     useEffect(() => {
@@ -26,6 +27,11 @@ export default function App() {
             setError('Running outside Electron — start with "npm run app:dev".');
             return;
         }
+        // Logging status is pushed, so the indicator reflects the sim appearing
+        // or going away without anyone refreshing anything.
+        api.autoLogStatus().then(setAutoLog).catch(() => {});
+        const offStatus = api.onAutoLogStatus(setAutoLog);
+
         (async () => {
             try {
                 api.currentDatabase().then(setDbFile).catch(() => {});
@@ -49,7 +55,15 @@ export default function App() {
                 setError(e.message);
             }
         })();
+        return () => offStatus();
     }, []);
+
+    const toggleAutoLog = useCallback(async () => {
+        try {
+            const s = autoLog?.state === 'off' ? await api.autoLogArm() : await api.autoLogDisarm();
+            setAutoLog(s);
+        } catch (e) { setError(e.message); }
+    }, [autoLog?.state]);
 
     /** Reload everything after the active database changes. */
     const reload = useCallback(async () => {
@@ -119,6 +133,18 @@ export default function App() {
                             disabled={busy === 'ref'}>
                         {busy === 'ref' ? 'Attaching…' : refFile ? 'Detach reference' : 'Compare with file…'}
                     </button>
+                </div>
+
+                <div
+                    className={`autolog ${autoLog?.state ?? 'off'}`}
+                    onClick={toggleAutoLog}
+                    title={autoLog?.reason ?? 'Click to toggle automatic logging'}
+                >
+                    <span className="dot" />
+                    {autoLog?.state === 'logging'
+                        ? <>Logging <b>{autoLog.track}</b>{autoLog.lapsRecorded ? ` · ${autoLog.lapsRecorded} lap(s)` : ''}</>
+                        : autoLog?.state === 'watching' ? 'Watching for the sim'
+                        : 'Auto-logging off'}
                 </div>
 
                 <div className="pick-hint">

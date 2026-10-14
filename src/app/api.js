@@ -135,6 +135,48 @@ async function trackSegments(con, { track }) {
 async function segmentLosses(con, opts) { return A.segmentDeltas(con, opts); }
 async function deriveSegments(con, opts) { return deriveTrackSegments(con, opts); }
 
+/**
+ * Make sure a track is set up, deriving its segments if nobody has yet.
+ *
+ * Corner detection, time-loss attribution and the track map all need segments,
+ * and until now they were only ever produced by the seed script. That meant
+ * driving at a new circuit gave you a dashboard with no corners in it and no
+ * indication why. A track only needs this done once, so it is cheap to check
+ * and safe to call after every lap.
+ *
+ * It deliberately prefers the FASTEST clean lap: segments derived from a lap
+ * with an off or a spin would bake that line into the circuit for good.
+ */
+async function ensureTrackSegments(con, { track, force = false } = {}) {
+    if (!track) return { ready: false, reason: 'no track' };
+
+    if (!force) {
+        const [have] = await rows(con,
+            `SELECT count(*) AS n FROM track_segments WHERE track = ?`, [track]);
+        if (Number(have?.n ?? 0) > 0) {
+            return { ready: true, derived: false, segments: Number(have.n) };
+        }
+    }
+
+    const [best] = await rows(con, `
+        SELECT l.lap_id FROM laps l JOIN sessions s USING (session_id)
+        WHERE s.track = ? AND l.valid AND l.lap_time_s IS NOT NULL
+          AND NOT l.is_out_lap AND NOT l.is_in_lap
+          AND EXISTS (SELECT 1 FROM samples sm WHERE sm.lap_id = l.lap_id)
+        ORDER BY l.lap_time_s LIMIT 1
+    `, [track]);
+
+    if (!best) return { ready: false, reason: 'no complete lap recorded yet' };
+
+    const segments = await deriveTrackSegments(con, { track, lapId: String(best.lap_id) });
+    return {
+        ready: true, derived: true,
+        segments: segments.length,
+        corners: segments.filter((x) => x.kind === 'corner').length,
+        fromLap: String(best.lap_id),
+    };
+}
+
 async function runEngineer(con, opts) {
     const { findings } = await E.analyse(con, opts);
     return findings.map((f) => ({
@@ -443,7 +485,7 @@ function strategyLive(_con, params) { return assessLive(params); }
 
 const API = {
     listSessions, listLaps, lapTrace, lapDelta, trackSegments, segmentLosses,
-    deriveSegments, runEngineer, pastAdvice, recordFeedback, ruleScores,
+    deriveSegments, ensureTrackSegments, runEngineer, pastAdvice, recordFeedback, ruleScores,
     strategy, strategyLive, degradation, optimalStint, liftAndCoast, forecast,
     attachReferenceFile, detachReferenceFile, referenceLaps,
     referenceLapDelta, referenceLapTrace, referenceSegmentLosses,

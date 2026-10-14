@@ -70,4 +70,13 @@ bridge.openDatabase = invoke('file:openDatabase');
 bridge.pickReference = invoke('file:pickReference');
 bridge.currentDatabase = invoke('file:current');
 
+bridge.autoLogStatus = invokeOk('autolog:status');
+bridge.autoLogArm = invokeOk('autolog:arm');
+bridge.autoLogDisarm = invokeOk('autolog:disarm');
+bridge.onAutoLogStatus = (cb) => {
+    const h = (_e, s) => cb(s);
+    ipcRenderer.on('autolog:status', h);
+    return () => ipcRenderer.removeListener('autolog:status', h);
+};
+
 contextBridge.exposeInMainWorld('lmu', Object.freeze(bridge));

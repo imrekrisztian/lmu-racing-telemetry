@@ -17,7 +17,7 @@ function missing(name) {
 
 const NAMES = [
     'listSessions', 'listLaps', 'lapTrace', 'lapDelta', 'trackSegments',
-    'segmentLosses', 'deriveSegments', 'runEngineer', 'pastAdvice',
+    'segmentLosses', 'deriveSegments', 'ensureTrackSegments', 'runEngineer', 'pastAdvice',
     'recordFeedback', 'ruleScores', 'strategy', 'strategyLive',
     'degradation', 'optimalStint', 'liftAndCoast', 'forecast',
     'attachReferenceFile', 'detachReferenceFile', 'referenceLaps',
@@ -37,6 +37,10 @@ api.currentDatabase = bridge?.currentDatabase ?? missing('currentDatabase');
 api.liveAvailable = bridge?.liveAvailable ?? (() => Promise.resolve(
     { ok: false, reason: 'not running in Electron' }));
 api.liveConnect = bridge?.liveConnect ?? missing('liveConnect');
+api.autoLogStatus = bridge?.autoLogStatus ?? (() => Promise.resolve({ state: 'off' }));
+api.autoLogArm = bridge?.autoLogArm ?? missing('autoLogArm');
+api.autoLogDisarm = bridge?.autoLogDisarm ?? missing('autoLogDisarm');
+api.onAutoLogStatus = bridge?.onAutoLogStatus ?? (() => () => {});
 api.onLiveTick = bridge?.onLiveTick ?? (() => () => {});
 api.onLiveEnd = bridge?.onLiveEnd ?? (() => () => {});
 
