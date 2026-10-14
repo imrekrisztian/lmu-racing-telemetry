@@ -9,7 +9,13 @@ const fs = require('node:fs');
 
 const MINE = '/tmp/lmu-test-mine.duckdb';
 const REF = '/tmp/lmu-test-ref.duckdb';
-for (const f of [MINE, REF]) fs.rmSync(f, { force: true });
+const FOREIGN = '/tmp/lmu-test-foreign.duckdb';
+// Clean every artefact up front -- a leftover file from a previous run used to
+// make the schema-guard check fail on its second invocation.
+for (const f of [MINE, REF, FOREIGN]) {
+    fs.rmSync(f, { force: true });
+    fs.rmSync(f + '.wal', { force: true });
+}
 
 const rows = async (con, sql) => (await (await con.run(sql)).getRowObjects());
 
@@ -75,11 +81,11 @@ async function seedLap(con, { sessionId, lapId, speed, metres }) {
 
     console.log('\n--- schema guard ---');
     await mine.con.run(`DETACH ref`);
-    await mine.con.run(`ATTACH '/tmp/lmu-notours.duckdb' AS bogus`);
+    await mine.con.run(`ATTACH '${FOREIGN}' AS bogus`);
     await mine.con.run(`CREATE TABLE bogus.unrelated(x INT)`);
     await mine.con.run(`DETACH bogus`);
     let rejected = false;
-    try { await attachReference(mine.con, '/tmp/lmu-notours.duckdb', 'bogus'); }
+    try { await attachReference(mine.con, FOREIGN, 'bogus'); }
     catch (e) { rejected = /not an lmu-racing-telemetry database/.test(e.message); }
     check('rejects a foreign .duckdb instead of joining garbage', rejected);
 
