@@ -1,4 +1,4 @@
-# lmu-delta
+# lmu-racing-telemetry
 
 Telemetry, strategy and engineering tool for Le Mans Ultimate.
 
@@ -145,3 +145,11 @@ without losing the raw data.
 
 Setups are keyed by content hash, so identical setups dedupe across sessions
 and lap times join straight onto setup changes.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+Shared-memory struct offsets in `src/reader/layout.js` are derived from
+[TheIronWolf's rF2SharedMemoryMapPlugin](https://github.com/TheIronWolfModding/rF2SharedMemoryMapPlugin),
+also MIT.

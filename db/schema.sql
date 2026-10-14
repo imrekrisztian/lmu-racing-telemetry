@@ -1,5 +1,5 @@
 -- ===========================================================================
--- lmu-delta storage schema  v1
+-- lmu-racing-telemetry storage schema  v1
 --
 -- UNIT CONTRACT -- normalise once, at ingest, never downstream:
 --   distance  m        speed      m/s        time        s

@@ -80,7 +80,7 @@ async function seedLap(con, { sessionId, lapId, speed, metres }) {
     await mine.con.run(`DETACH bogus`);
     let rejected = false;
     try { await attachReference(mine.con, '/tmp/lmu-notours.duckdb', 'bogus'); }
-    catch (e) { rejected = /not an lmu-delta database/.test(e.message); }
+    catch (e) { rejected = /not an lmu-racing-telemetry database/.test(e.message); }
     check('rejects a foreign .duckdb instead of joining garbage', rejected);
 
     console.log(failures === 0 ? '\nALL CHECKS PASSED\n' : `\n${failures} CHECK(S) FAILED\n`);

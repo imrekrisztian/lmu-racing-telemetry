@@ -7,7 +7,7 @@ const path = require('node:path');
 const SCHEMA_VERSION = '1';
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
-/** Open (creating if needed) a lmu-delta database and apply the schema. */
+/** Open (creating if needed) a lmu-racing-telemetry database and apply the schema. */
 async function open(file) {
     const instance = await DuckDBInstance.create(file);
     const con = await instance.connect();
@@ -35,7 +35,7 @@ async function attachReference(con, file, alias = 'ref') {
         version = await scalar(con, `SELECT value FROM ${alias}.meta WHERE key = 'schema_version'`);
     } catch {
         await con.run(`DETACH ${alias}`);
-        throw new Error(`${path.basename(file)} has no meta table -- not an lmu-delta database.`);
+        throw new Error(`${path.basename(file)} has no meta table -- not an lmu-racing-telemetry database.`);
     }
 
     if (version !== SCHEMA_VERSION) {
