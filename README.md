@@ -595,3 +595,39 @@ how an engineer actually works: lean on the best corner until it stops paying.
 
 Output is what a driver can act on: *lift 63 m early at turns 8, 10 and 12 —
 saves 0.151 %VE per lap, costs 0.076 s*.
+
+### Driver swaps and handover planning
+
+The optimisation is **not** sharing laps out evenly. It is minimising handovers
+while satisfying every drive-time rule, because a driver change adds roughly
+half a minute to a stop that would otherwise be fuel only. Double and triple
+stinting is how endurance teams buy that time back, so whoever is in the car
+stays in it for as long as the limits — and the other drivers' minimum seat
+time — allow.
+
+```
+CREW   2 handovers costing 1m04s
+       32s each · 4 stops total, so 2 are fuel only
+
+STINT SHEET
+ 1  Krisztian          21 laps   1–21     1h14m
+ 2  Krisztian          20 laps   22–41    1h10m
+ 3  Co-driver  [IN]    20 laps   42–61    1h10m
+```
+
+Constraints, all optional: `maxContinuousStints`, `maxContinuousS`,
+`maxTotalS`, `minTotalS` (Bronze seat time), and a `rollingWindow` for rules
+shaped like "no more than 4h at the wheel in any 6h period". An impossible set
+is **reported**, never silently broken.
+
+The minimum-seat-time check looks ahead: without it the planner triple-stints
+the quickest driver and only discovers the shortfall at the last stop, when it
+can no longer be fixed.
+
+**Handovers sit inside the race planner's fixed point**, not added afterwards —
+they lengthen the stops they land on, which shortens the race, which changes
+the lap count.
+
+The schedule is the team-facing half: "lap 41" means nothing to someone setting
+an alarm in another timezone, so each handover resolves to a wall clock and a
+be-ready-by time fifteen minutes earlier.

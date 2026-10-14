@@ -182,13 +182,24 @@ async function createWindow() {
             return;
         }
 
+        await new Promise((r) => setTimeout(r, 2500));
+
+        // Scroll AFTER settling. Panels that load asynchronously are not in the
+        // document yet at first paint, so an early scrollTop is clamped to the
+        // short page and silently lands at the top.
         if (process.env.LMU_SMOKE_SCROLL) {
-            await win.webContents.executeJavaScript(
-                `document.querySelector('.content').scrollTop = ${Number(process.env.LMU_SMOKE_SCROLL)}`);
-            await new Promise((r) => setTimeout(r, 400));
+            const at = await win.webContents.executeJavaScript(`
+                (() => {
+                    const el = document.querySelector('.content');
+                    el.scrollTop = ${Number(process.env.LMU_SMOKE_SCROLL)};
+                    return { asked: ${Number(process.env.LMU_SMOKE_SCROLL)},
+                             got: el.scrollTop, height: el.scrollHeight };
+                })()
+            `);
+            process.stdout.write(`scroll ${JSON.stringify(at)}\n`);
+            await new Promise((r) => setTimeout(r, 500));
         }
 
-        await new Promise((r) => setTimeout(r, 2500));
         const image = await win.webContents.capturePage();
         fs.writeFileSync(process.env.LMU_SMOKE, image.toPNG());
         process.stdout.write(`captured ${process.env.LMU_SMOKE}\n`);

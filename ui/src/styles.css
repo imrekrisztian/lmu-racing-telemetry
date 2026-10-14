@@ -271,3 +271,5 @@ table.standings tr.my-class td:nth-child(2) { color: #fff; }
 .wear-bar { height: 10px; background: #0a0c10; border-radius: 3px; overflow: hidden; margin: 5px 0 4px; }
 .wear-bar i { display: block; height: 100%; }
 .wear-nums { font-size: 12px; }
+
+tr.handover-row td { border-top: 1px solid rgba(245,158,11,.35); }

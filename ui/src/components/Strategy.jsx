@@ -3,6 +3,7 @@ import api from '../api.js';
 import { duration, lapTime } from '../format.js';
 import Degradation from './Degradation.jsx';
 import FuelSaving from './FuelSaving.jsx';
+import Crew from './Crew.jsx';
 
 // Hypercar and LMGT3 burn a Virtual Energy allowance; LMP2 burns fuel. The
 // form follows the class so the units on screen are never the wrong ones.
@@ -24,6 +25,9 @@ export default function Strategy({ sessionId, track, lapId }) {
     const [carClass, setCarClass] = useState('Hyper');
     const [form, setForm] = useState(Object.fromEntries(FIELDS.map(([k, , d]) => [k, d])));
     const [plan, setPlan] = useState(null);
+    const [drivers, setDrivers] = useState('Krisztian, Co-driver');
+    const [maxRunH, setMaxRunH] = useState('2.5');
+    const [startsAt, setStartsAt] = useState('2026-06-13T13:00');
     const [error, setError] = useState(null);
 
     const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -38,6 +42,8 @@ export default function Strategy({ sessionId, track, lapId }) {
                     carClass,
                     consumptionPerLap: Number(form.consumptionPerLap),
                     capacity: form.capacity === '' ? undefined : Number(form.capacity),
+                    drivers: drivers.split(',').map((x) => x.trim()).filter(Boolean)
+                        .map((name) => ({ name, maxContinuousS: Number(maxRunH) * 3600 })),
                     reserve: Number(form.reserve) || 0,
                     pitLaneDeltaS: Number(form.pitLaneDeltaS),
                     refuelRate: Number(form.refuelRate),
@@ -50,7 +56,7 @@ export default function Strategy({ sessionId, track, lapId }) {
             }
         })();
         return () => { cancelled = true; };
-    }, [carClass, form]);
+    }, [carClass, form, drivers, maxRunH]);
 
     return (
         <>
@@ -62,6 +68,18 @@ export default function Strategy({ sessionId, track, lapId }) {
                         <select value={carClass} onChange={(e) => setCarClass(e.target.value)}>
                             {CLASSES.map((c) => <option key={c}>{c}</option>)}
                         </select>
+                    </div>
+                    <div style={{ gridColumn: 'span 2' }}>
+                        <label>Drivers (comma separated)</label>
+                        <input value={drivers} onChange={(e) => setDrivers(e.target.value)} />
+                    </div>
+                    <div>
+                        <label>Max continuous (h)</label>
+                        <input value={maxRunH} onChange={(e) => setMaxRunH(e.target.value)} inputMode="decimal" />
+                    </div>
+                    <div>
+                        <label>Race starts (local)</label>
+                        <input value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
                     </div>
                     {FIELDS.map(([k, label]) => (
                         <div key={k}>
@@ -104,7 +122,10 @@ export default function Strategy({ sessionId, track, lapId }) {
                         </div>
                     </div>
 
-                    <div className="panel">
+                    <Crew plan={plan} startsAt={startsAt ? `${startsAt}:00Z` : null}
+                          timeZone={Intl.DateTimeFormat().resolvedOptions().timeZone} />
+
+                    <div className="panel" hidden>
                         <h3>Stint plan</h3>
                         <table>
                             <thead>

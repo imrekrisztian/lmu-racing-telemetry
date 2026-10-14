@@ -145,25 +145,60 @@ test('refuel time scales with load taken on, not a flat figure', () => {
 
 // --- driver rotation ------------------------------------------------------
 
-test('drivers rotate and continuous-time limits are respected', () => {
+test('drivers are double-stinted rather than swapped at every stop', () => {
+    // Deliberately NOT alternating. A driver change costs about half a minute,
+    // so the planner keeps whoever is in the car in it for as long as the
+    // limits allow. An earlier round-robin handed over at every single stop.
     const p = planRace({
         totalLaps: 100, lapTimeS: 210, carClass: 'Hyper',
         consumptionPerLap: 4.2, pitLaneDeltaS: 28, refuelRate: 3.0,
         drivers: [
-            { name: 'Krisztian', maxStintS: 2 * 3600 },
-            { name: 'Co-driver', maxStintS: 2 * 3600 },
+            { name: 'Krisztian', maxContinuousS: 2.5 * 3600 },
+            { name: 'Co-driver', maxContinuousS: 2.5 * 3600 },
         ],
     });
     assert.ok(p.stints.every((s) => s.driver));
-    assert.notEqual(p.stints[0].driver, p.stints[1].driver, 'drivers alternate');
-    assert.equal(p.warnings.filter((w) => /breaches/.test(w)).length, 0);
+    assert.ok(p.crew, 'crew plan returned');
+    assert.ok(p.crew.handoverCount < p.stints.length - 1,
+        'fewer handovers than stops, because stints are doubled up');
+    assert.equal(p.stints[0].driver, p.stints[1].driver, 'the first driver stays in');
+    for (const d of p.crew.perDriver) {
+        assert.ok(d.longestRunS <= 2.5 * 3600 + 1, `${d.name} exceeded the continuous limit`);
+    }
+});
+
+test('the legacy maxStintS field is honoured rather than ignored', () => {
+    const p = planRace({
+        totalLaps: 60, lapTimeS: 210, carClass: 'Hyper',
+        consumptionPerLap: 4.2, pitLaneDeltaS: 28, refuelRate: 3.0,
+        drivers: [{ name: 'A', maxStintS: 2.5 * 3600 }, { name: 'B', maxStintS: 2.5 * 3600 }],
+    });
+    for (const d of p.crew.perDriver) assert.ok(d.longestRunS <= 2.5 * 3600 + 1);
+});
+
+test('driver changes lengthen the race, so they sit inside the fixed point', () => {
+    const base = {
+        durationS: 6 * 3600, lapTimeS: 212, carClass: 'Hyper',
+        consumptionPerLap: 4.4, pitLaneDeltaS: 30, refuelRate: 3.0,
+    };
+    const solo = planRace({ ...base, drivers: [{ name: 'A' }] });
+    const crewed = planRace({
+        ...base,
+        drivers: [{ name: 'A', maxContinuousStints: 1 }, { name: 'B', maxContinuousStints: 1 }],
+        driverChangeS: 40,
+    });
+    assert.equal(solo.crew.handoverCount, 0);
+    assert.ok(crewed.crew.handoverCount > 0);
+    assert.ok(crewed.totalPitTimeS > solo.totalPitTimeS, 'handovers cost time');
+    assert.ok(crewed.totalLaps <= solo.totalLaps, 'and that time comes out of the laps');
 });
 
 test('an impossible stint is flagged rather than silently assigned', () => {
     const p = planRace({
-        totalLaps: 30, lapTimeS: 400, carClass: 'Hyper',
-        consumptionPerLap: 3.0, pitLaneDeltaS: 28, refuelRate: 3.0,
-        drivers: [{ name: 'Solo', maxStintS: 600 }],   // 10 min cap, stints are far longer
+        totalLaps: 90, lapTimeS: 400, carClass: 'Hyper',
+        consumptionPerLap: 4.0, pitLaneDeltaS: 28, refuelRate: 3.0,
+        drivers: [{ name: 'Solo', maxContinuousS: 600 }],   // 10 min cap, stints far longer
     });
+    assert.ok(p.crew.violations.length > 0);
     assert.match(p.warnings.join(' '), /breaches every driver's limits/);
 });

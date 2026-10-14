@@ -10,6 +10,7 @@
 // iterations instead of being a constant.
 
 const F = require('./fuel');
+const { planDriverStints } = require('./drivers');
 
 const MAX_ITERATIONS = 25;
 
@@ -64,9 +65,28 @@ function planRace(o) {
     let converged = false;
     let iterations = 0;
 
+    let crew = null;
+
     for (let i = 0; i < MAX_ITERATIONS; i++) {
         iterations = i + 1;
         plan = buildStints({ ...o, totalLaps, maxLapsPerStint, capacity, reserve, limiter, unit });
+
+        // Driver changes lengthen the stops they land on, which shortens the
+        // race, which changes the lap count -- so they belong INSIDE the fixed
+        // point rather than being added to the total afterwards.
+        if (o.drivers && o.drivers.length > 0) {
+            // Only pass keys that were actually supplied. Spreading an
+            // explicit `undefined` over the defaults wins, which turned
+            // driverChangeS into undefined and made 0 * undefined = NaN
+            // poison the entire plan.
+            const crewRules = {};
+            if (o.driverChangeS != null) crewRules.driverChangeS = o.driverChangeS;
+            if (o.rollingWindow != null) crewRules.rollingWindow = o.rollingWindow;
+
+            crew = planDriverStints({ stints: plan.stints, drivers: o.drivers, rules: crewRules });
+            plan.stints = crew.stints;
+            plan.totalPitTimeS = round(plan.totalPitTimeS + crew.handoverTimeS, 3);
+        }
 
         if (!timed) { converged = true; break; }
 
@@ -85,7 +105,9 @@ function planRace(o) {
         );
     }
 
-    assignDrivers(plan.stints, o.drivers, o.lapTimeS, warnings);
+    if (crew) {
+        for (const v of crew.violations) warnings.push(v.detail);
+    }
 
     const onTrackS = totalLaps * o.lapTimeS;
     return {
@@ -105,6 +127,14 @@ function planRace(o) {
         converged,
         iterations,
         warnings,
+        crew: crew ? {
+            handovers: crew.handovers,
+            perDriver: crew.perDriver,
+            handoverCount: crew.handoverCount,
+            handoverTimeS: crew.handoverTimeS,
+            driverChangeS: crew.driverChangeS,
+            violations: crew.violations,
+        } : null,
     };
 }
 
@@ -169,46 +199,6 @@ function buildStints({
     }
 
     return { stints, totalPitTimeS: round(totalPitTimeS, 3) };
-}
-
-/** Round-robin, honouring each driver's continuous and total limits. */
-function assignDrivers(stints, drivers, lapTimeS, warnings) {
-    if (!drivers || drivers.length === 0) return;
-
-    const totals = new Map(drivers.map((d) => [d.name, 0]));
-    let cursor = 0;
-
-    for (const s of stints) {
-        const stintS = s.laps * lapTimeS;
-
-        // Prefer the next driver in rotation who can legally take this stint.
-        let chosen = null;
-        for (let probe = 0; probe < drivers.length; probe++) {
-            const d = drivers[(cursor + probe) % drivers.length];
-            const withinStint = d.maxStintS == null || stintS <= d.maxStintS;
-            const withinTotal = d.maxTotalS == null || totals.get(d.name) + stintS <= d.maxTotalS;
-            if (withinStint && withinTotal) { chosen = d; cursor = (cursor + probe + 1) % drivers.length; break; }
-        }
-
-        if (!chosen) {
-            chosen = drivers[cursor % drivers.length];
-            cursor = (cursor + 1) % drivers.length;
-            warnings.push(
-                `Stint ${s.index} (${fmt(stintS)}) breaches every driver's limits; ` +
-                `assigned ${chosen.name} anyway.`
-            );
-        }
-
-        s.driver = chosen.name;
-        totals.set(chosen.name, totals.get(chosen.name) + stintS);
-    }
-
-    for (const d of drivers) {
-        if (d.maxTotalS != null && totals.get(d.name) > d.maxTotalS) {
-            warnings.push(`${d.name} is over the total drive-time limit ` +
-                `(${fmt(totals.get(d.name))} of ${fmt(d.maxTotalS)}).`);
-        }
-    }
 }
 
 const round = (v, dp) => Math.round(v * 10 ** dp) / 10 ** dp;
