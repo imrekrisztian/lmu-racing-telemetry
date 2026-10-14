@@ -130,7 +130,19 @@ async function main() {
         ok(`${version} (unchanged)`);
     }
 
-    const ahead = git('rev-list', '--count', `origin/${branch}..HEAD`).trim();
+    // Refresh the remote-tracking ref before counting. origin/<branch> can be
+    // stale (someone else pushed) or absent (never pushed), and reporting the
+    // wrong number of commits at the moment someone decides whether to push is
+    // exactly when it matters.
+    let ahead;
+    const fetched = tryRun('git', ['fetch', '--quiet', 'origin', branch]);
+    if (fetched.status === 0) {
+        ahead = git('rev-list', '--count', `origin/${branch}..HEAD`).trim();
+    } else {
+        // No remote branch yet: everything is unpushed.
+        ahead = git('rev-list', '--count', 'HEAD').trim();
+        warn(`origin/${branch} not found — this looks like the first push`);
+    }
     say();
     say(`   ${C.bold}${ahead}${C.off} commit(s) to push, tagged ${C.bold}${tag}${C.off}`);
     say(`   CI will build the installer on a windows-latest runner.`);
