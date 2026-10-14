@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS meta (
 -- Identity for ATTACH compatibility checks (feature: compare against a
 -- reference .duckdb someone else recorded).
 INSERT OR REPLACE INTO meta VALUES
-    ('schema_version', '1'),
+    ('schema_version', '2'),
     ('unit_contract',  'si-celsius-kpa-v1');
 
 
@@ -145,6 +145,28 @@ CREATE TABLE IF NOT EXISTS samples (
 
     ride_height_fl  FLOAT, ride_height_fr FLOAT,
     ride_height_rl  FLOAT, ride_height_rr FLOAT
+);
+
+
+-- --------------------------------------------------------------------------
+-- Track segments -- corners and straights, detected once from a reference lap
+-- and then held fixed for that track.
+--
+-- They must be stable: if corner boundaries moved between sessions, per-corner
+-- comparisons across sessions would be meaningless.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS track_segments (
+    track           VARCHAR NOT NULL,
+    seg_num         INTEGER NOT NULL,
+    kind            VARCHAR NOT NULL,   -- 'corner' | 'straight'
+    name            VARCHAR,            -- optional human label
+    start_m         DOUBLE NOT NULL,
+    apex_m          DOUBLE,             -- NULL for straights
+    end_m           DOUBLE NOT NULL,
+    min_speed_ms    DOUBLE,
+    entry_speed_ms  DOUBLE,
+    derived_from    UUID,               -- the lap the detection ran on
+    PRIMARY KEY (track, seg_num)
 );
 
 

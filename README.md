@@ -227,3 +227,50 @@ LIVE  stint 1 · 22 laps left on this load (through lap 22, plan says 25)
 
 That last line is the one a static calculator cannot produce, and it feeds
 straight into lift-and-coast coaching.
+
+## Telemetry analysis
+
+```js
+const segs = await deriveTrackSegments(con, { track, lapId: referenceLap });
+const worst = await worstSegments(con, { track, lapA: mine, lapB: reference }, 5);
+```
+
+```
+TIME LOSS vs reference — worst 5
+  seg 12 corner   10060-10864m  +0.210s
+  seg  2 corner     377-1389 m  +0.184s
+  seg 16 corner   12637-13538m  +0.172s
+  sum of segments: 1.207s        <- equals the total lap delta
+```
+
+### Corner detection uses speed, not steering
+
+Steering angle varies with setup, driver style and controller calibration.
+Speed minima are a property of the circuit. A corner is a local speed minimum
+bounded by the fastest points either side; straights fall out for free as the
+gaps between them.
+
+Segments are derived once per track from a reference lap and then **frozen**.
+If corner boundaries moved between sessions, per-corner comparison across
+sessions would be comparing different pieces of tarmac.
+
+The subtlety worth knowing: a corner's extent runs out only as far as speed
+stays below 95% of the surrounding peaks. Walking out to the local maximum
+instead makes adjacent corners run across the flat top of a straight and
+overlap — the tests assert segments partition the lap exactly.
+
+### What it computes
+
+| Output | Use |
+|---|---|
+| `segmentDeltas` / `worstSegments` | where the time actually goes — ranked |
+| `cornerMetrics` | brake point, apex speed and location, throttle application |
+| `consistency` | lap-time spread, plus per-corner apex and brake-point σ |
+
+Attribution **conserves the total**: per-segment losses sum to the full lap
+delta, asserted in the tests. If they didn't, the ranking would be pointing at
+the wrong corners.
+
+Braking-point σ is the most actionable consistency number — it localises
+inconsistency to a specific corner, and endurance races are won on spread
+rather than on a single best lap.
