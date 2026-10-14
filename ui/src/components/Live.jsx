@@ -3,6 +3,7 @@ import api from '../api.js';
 import DeltaStrip from './DeltaStrip.jsx';
 import TrackMap from './TrackMap.jsx';
 import Standings from './Standings.jsx';
+import Weather from './Weather.jsx';
 import { lapTime, delta } from '../format.js';
 
 const SPEEDS = [1, 2, 4, 10];
@@ -25,6 +26,7 @@ export default function Live({ laps, lapA, lapB, track }) {
     const lastLapNum = useRef(null);
     const [map, setMap] = useState(null);
     const [losses, setLosses] = useState([]);
+    const weatherHistory = useRef([]);
 
     useEffect(() => {
         const offTick = api.onLiveTick((s) => {
@@ -32,6 +34,16 @@ export default function Live({ laps, lapA, lapB, track }) {
             if (s.lap.num !== lastLapNum.current) {
                 trace.current = [];
                 lastLapNum.current = s.lap.num;
+            }
+            // One conditions point every ~2s of session time is plenty; weather
+            // moves on a scale of minutes, not frames.
+            if (s.conditions) {
+                const h = weatherHistory.current;
+                const last = h[h.length - 1];
+                if (!last || Math.abs((s.lap.timeS ?? 0) - last.t) > 2 || h.length === 0) {
+                    h.push({ t: s.lap.timeS ?? 0, rain: s.conditions.raining ?? 0, wet: s.conditions.wetness_avg ?? 0 });
+                    if (h.length > 400) h.shift();
+                }
             }
             if (s.lap.deltaS != null) {
                 trace.current = [...trace.current, { x: s.lap.distM, d: s.lap.deltaS }];
@@ -148,6 +160,11 @@ export default function Live({ laps, lapA, lapB, track }) {
                     <h3>Delta this lap</h3>
                     <DeltaStrip points={trace.current} lapLength={snap?.lap.lapLengthM ?? 1} />
                     <div className="progress"><i style={{ width: `${(snap?.lap.progress ?? 0) * 100}%` }} /></div>
+                </div>
+
+                <div className="panel">
+                    <h3>Conditions</h3>
+                    <Weather conditions={snap?.conditions} history={weatherHistory.current} />
                 </div>
 
                 <div className="panel">

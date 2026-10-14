@@ -13,6 +13,9 @@ const { LapTracker } = require('../src/ingest/lap-tracker');
 const { syntheticFrames, DEFAULT_TRACK } = require('../src/reader/synthetic-source');
 const { deriveTrackSegments } = require('../src/analysis/corners');
 const { analyse } = require('../src/engineer/engine');
+const { normalizeConditions } = require('../src/ingest/normalize');
+
+const CONDITIONS_EVERY_S = 2;
 
 const DRIVERS = [
     { driver: 'Krisztian', skill: 1.000, laps: 6 },
@@ -34,13 +37,20 @@ async function main() {
             driver: d.driver, sim_version: 'demo', sample_rate_hz: 90,
         });
         const ids = [];
+        const conditions = [];
+        let nextConditionAt = 0;
         const tracker = new LapTracker();
         for (const f of syntheticFrames({ laps: d.laps, sampleRateHz: 90, skill: d.skill })) {
             const done = tracker.push(f);
             if (done) ids.push(await writer.writeLap(sessionId, done));
+            if (f.conditions && f.elapsedTime >= nextConditionAt) {
+                conditions.push({ at_s: f.elapsedTime, ...normalizeConditions(f.conditions) });
+                nextConditionAt = f.elapsedTime + CONDITIONS_EVERY_S;
+            }
         }
+        await writer.writeConditions(sessionId, conditions);
         byDriver[d.driver] = ids;
-        process.stdout.write(`  ${d.driver.padEnd(12)} ${ids.length} laps\n`);
+        process.stdout.write(`  ${d.driver.padEnd(12)} ${ids.length} laps, ${conditions.length} condition samples\n`);
     }
     writer.close();
 

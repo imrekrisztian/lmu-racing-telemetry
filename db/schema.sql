@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS meta (
 -- Identity for ATTACH compatibility checks (feature: compare against a
 -- reference .duckdb someone else recorded).
 INSERT OR REPLACE INTO meta VALUES
-    ('schema_version', '2'),
+    ('schema_version', '3'),
     ('unit_contract',  'si-celsius-kpa-v1');
 
 
@@ -145,6 +145,38 @@ CREATE TABLE IF NOT EXISTS samples (
 
     ride_height_fl  FLOAT, ride_height_fr FLOAT,
     ride_height_rl  FLOAT, ride_height_rr FLOAT
+);
+
+
+-- --------------------------------------------------------------------------
+-- Weather and track conditions, sampled over the session.
+--
+-- These are READ FROM SCORING, not from the Weather buffer -- that one holds
+-- rF2WeatherControlInfo, which is an input for setting weather. Field names
+-- below mirror rF2ScoringInfo exactly so the mapping stays obvious:
+--
+--   mAmbientTemp / mTrackTemp   Celsius (already; unlike tyre temps)
+--   mRaining                    rain severity   0..1
+--   mDarkCloud                  cloud darkness  0..1
+--   mWind                       vec3 speed, reduced here to speed + bearing
+--   mMin/Avg/MaxPathWetness     wetness on the racing line 0..1
+--
+-- A race can be dry on one part of the circuit and wet on another, which is
+-- why min and max are kept rather than only the average.
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS conditions (
+    session_id      UUID NOT NULL REFERENCES sessions(session_id),
+    at_s            DOUBLE NOT NULL,        -- session elapsed time
+    air_temp_c      DOUBLE,
+    track_temp_c    DOUBLE,
+    raining         DOUBLE,                 -- 0..1
+    cloud           DOUBLE,                 -- 0..1
+    wind_ms         DOUBLE,
+    wind_dir_rad    DOUBLE,
+    wetness_min     DOUBLE,
+    wetness_avg     DOUBLE,
+    wetness_max     DOUBLE,
+    PRIMARY KEY (session_id, at_s)
 );
 
 

@@ -73,4 +73,27 @@ function normalizeLap(s) {
     };
 }
 
-module.exports = { normalizeSample, normalizeLap, WHEELS };
+/**
+ * Scoring conditions -> the schema's contract.
+ *
+ * Field names below are rF2ScoringInfo's, so the mapping stays checkable.
+ * Note the temps pass straight through: Scoring reports ambient and track in
+ * Celsius, unlike the Kelvin tyre temps in Telemetry.
+ */
+function normalizeConditions(c) {
+    const wind = c.wind ?? null;
+    return {
+        air_temp_c: U.celsius(c.ambientTemp),
+        track_temp_c: U.celsius(c.trackTemp),
+        raining: U.fraction(c.raining),
+        cloud: U.fraction(c.darkCloud),
+        wind_ms: wind ? Math.sqrt(wind.x * wind.x + wind.z * wind.z) : null,
+        // Bearing the wind blows towards, 0 = +x, measured in the ground plane.
+        wind_dir_rad: wind ? Math.atan2(wind.z, wind.x) : null,
+        wetness_min: U.fraction(c.minPathWetness),
+        wetness_avg: U.fraction(c.avgPathWetness),
+        wetness_max: U.fraction(c.maxPathWetness),
+    };
+}
+
+module.exports = { normalizeSample, normalizeLap, normalizeConditions, WHEELS };

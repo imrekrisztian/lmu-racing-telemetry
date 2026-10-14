@@ -451,3 +451,38 @@ UI labels them as derived:
 
 Per-car consumption and laps-remaining come from each rival's own energy trace,
 with the refuel jump excluded so it cannot pollute the estimate.
+
+### Weather and track conditions
+
+Fields mirror `rF2ScoringInfo` one for one, so the mapping stays checkable:
+
+| Field | Meaning |
+|---|---|
+| `mAmbientTemp` / `mTrackTemp` | **Celsius already** — unlike the Kelvin tyre temps in Telemetry |
+| `mRaining` | rain severity 0..1 |
+| `mDarkCloud` | cloud darkness 0..1 |
+| `mWind` | vec3 speed, reduced to speed + bearing |
+| `mMin/Avg/MaxPathWetness` | wetness on the racing line 0..1 |
+
+**These are read from SCORING, not from the Weather buffer.** `$rFactor2SMMP_Weather$`
+holds `rF2WeatherControlInfo` (`mRaining[3][3]`, `mCloudiness`, `mAmbientTempK`,
+`mWindMaxSpeed`) — an input for *setting* weather through the plugin, not a
+source for reading it. Note that one takes Kelvin while Scoring reports Celsius.
+
+Two temperature fields a few hundred bytes apart use different scales, which is
+why the unit contract lives in one file.
+
+Conditions are stored as a session time series rather than per sample: weather
+moves over minutes, so one row every two seconds captures everything without
+adding ten columns to the hot table.
+
+**Why min and max wetness, not just average:** the racing line dries first. A
+circuit can be dry on the line and standing water off it, and that spread is
+the decision.
+
+The panel's headline is the **crossover** call. Rain stopping does not dry a
+track — wetness lags it going up and lags far longer coming down — so rain and
+wetness are plotted together and the gap between them is the thing to read. The
+synthetic model uses a 70s wet-up and 300s dry-out time constant; an earlier
+version applied the lag per frame, which at 90Hz saturated instantly and made
+the lag silently vanish.

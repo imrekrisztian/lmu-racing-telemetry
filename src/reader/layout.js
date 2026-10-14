@@ -20,6 +20,11 @@
 // YellowFlagState / SectorFlag fields are almost certainly inert here --
 // present in the layout because the engine defines them, never populated.
 // Confirm with the probe (--buffer Rules) before building anything on them.
+//
+// The Weather buffer is NOT where conditions are read from. It holds
+// rF2WeatherControlInfo, which is an INPUT for setting weather via the plugin
+// (mRaining[3][3], mCloudiness, mAmbientTempK, mWindMaxSpeed). The readable
+// conditions -- temps, rain, cloud, wind, path wetness -- live in SCORING.
 const BUFFERS = {
     Telemetry: '$rFactor2SMMP_Telemetry$',
     Scoring: '$rFactor2SMMP_Scoring$',

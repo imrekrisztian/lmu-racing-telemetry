@@ -2,10 +2,16 @@
 
 // The unit contract, enforced in exactly one place.
 //
-// LMU/rF2 is inconsistent on purpose-built grounds: tyre and brake temps come
-// in Kelvin, water and oil temps are already Celsius, pressures are kPa, and
-// lap times use -1.0 / 0.0 as "no value" sentinels. Converting here means no
-// query, chart or rule downstream ever has to remember which is which.
+// LMU/rF2 is inconsistent on purpose-built grounds:
+//
+//   Telemetry  tyre and brake temps     KELVIN      -> convert
+//   Telemetry  water and oil temps      Celsius     -> already right
+//   Scoring    ambient and track temp   CELSIUS     -> already right
+//
+// Two temperature fields a few hundred bytes apart in the same sim use
+// different scales, so converting here means no query, chart or rule
+// downstream ever has to remember which is which. Pressures are kPa, wetness
+// and rain are 0..1, and lap times use -1.0 / 0.0 as "no value" sentinels.
 
 const KELVIN_OFFSET = 273.15;
 
@@ -31,4 +37,13 @@ const signedUnit = (v) => (v == null ? null : Math.min(1, Math.max(-1, v)));
 const speedOf = (vel) =>
     vel == null ? null : Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
 
-module.exports = { KELVIN_OFFSET, kToC, lapTime, positiveOrNull, unit, signedUnit, speedOf };
+/** Scoring already reports these in Celsius -- do NOT run kToC over them. */
+const celsius = (v) => (v == null ? null : v);
+
+/** Wetness, rain severity and cloud darkness are all 0..1 in rF2/LMU. */
+const fraction = (v) => (v == null ? null : Math.min(1, Math.max(0, v)));
+
+module.exports = {
+    KELVIN_OFFSET, kToC, lapTime, positiveOrNull, unit, signedUnit, speedOf,
+    celsius, fraction,
+};

@@ -29,6 +29,21 @@ class ReplaySource {
         this.cursor = 0;
     }
 
+    /** Conditions recorded for the session, ordered so lookup is a walk. */
+    async _loadConditions(lapId) {
+        const r = (await this.con.runAndReadAll(
+            `SELECT c.at_s, c.air_temp_c, c.track_temp_c, c.raining, c.cloud,
+                    c.wind_ms, c.wind_dir_rad, c.wetness_min, c.wetness_avg, c.wetness_max
+             FROM conditions c
+             JOIN laps l ON l.session_id = c.session_id
+             WHERE l.lap_id = '${lapId}' ORDER BY c.at_s`)).getRowObjects();
+        return r.map((x) => {
+            const o = {};
+            for (const k of Object.keys(x)) o[k] = x[k] == null ? null : Number(x[k]);
+            return o;
+        });
+    }
+
     async load() {
         const cols = ['dist_m', 't_s', 'speed_ms', 'throttle', 'brake', 'steer', 'gear',
             'rpm', 'fuel_l', ...WHEEL_COLS].join(', ');
@@ -49,6 +64,12 @@ class ReplaySource {
             lapNumber = meta ? Number(meta.lap_num) : lapNumber + 1;
             const lapStartET = clock;
 
+            // Conditions are keyed on the ORIGINAL session clock, while the
+            // replay timeline restarts at zero -- so match on the recorded
+            // lap's own elapsed time, not on playback time.
+            const conds = await this._loadConditions(lapId);
+            let condIdx = 0;
+
             for (const r of rows) {
                 const s = { lapNumber, lapStartET, lastLapTime };
                 for (const k of Object.keys(r)) {
@@ -56,6 +77,22 @@ class ReplaySource {
                 }
                 s.elapsedTime = lapStartET + s.t_s;
                 s._at = s.elapsedTime;
+
+                if (conds.length) {
+                    while (condIdx < conds.length - 1 && conds[condIdx + 1].at_s <= s.elapsedTime) condIdx++;
+                    const c = conds[condIdx];
+                    s.conditions = {
+                        ambientTemp: c.air_temp_c, trackTemp: c.track_temp_c,
+                        raining: c.raining, darkCloud: c.cloud,
+                        wind: c.wind_ms == null ? null : {
+                            x: c.wind_ms * Math.cos(c.wind_dir_rad ?? 0), y: 0,
+                            z: c.wind_ms * Math.sin(c.wind_dir_rad ?? 0),
+                        },
+                        minPathWetness: c.wetness_min, avgPathWetness: c.wetness_avg,
+                        maxPathWetness: c.wetness_max,
+                    };
+                }
+
                 this.timeline.push(s);
             }
 

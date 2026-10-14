@@ -29,6 +29,49 @@ const DEFAULT_TRACK = {
 const SCORING_HZ = 5;
 
 /**
+ * A weather model, so the conditions panel has something to show before real
+ * Scoring data exists. Shaped to match rF2ScoringInfo's fields exactly.
+ *
+ * The part worth getting right is that WETNESS LAGS RAIN. A circuit does not
+ * become wet the instant it starts raining, and it stays wet long after the
+ * rain stops -- which is the whole reason crossover timing is a strategy
+ * decision. Modelled as a first-order lag with a slower dry-out than wet-up.
+ */
+function weatherAt(tS, state) {
+    // A shower arrives around ten minutes in and passes over a few minutes.
+    const showerPeak = 600;
+    const showerWidth = 260;
+    const rain = Math.max(0, Math.exp(-((tS - showerPeak) ** 2) / (2 * showerWidth ** 2)) * 0.85);
+
+    // Wetness chases rain as a first-order lag, in SECONDS rather than per
+    // frame -- a per-frame rate saturates instantly at 90Hz and the lag
+    // silently disappears, which is exactly what the first version did.
+    const dt = Math.max(0, tS - (state.lastT ?? tS));
+    state.lastT = tS;
+    const WET_TAU_S = 70;      // soaks in about a minute
+    const DRY_TAU_S = 300;     // takes far longer to dry out
+    const tau = rain > state.wetness ? WET_TAU_S : DRY_TAU_S;
+    state.wetness += (rain - state.wetness) * (1 - Math.exp(-dt / tau));
+
+    const cloud = Math.min(1, 0.15 + rain * 1.1);
+    // Track temp falls under cloud and rain; ambient moves far less.
+    const ambient = 21.5 - cloud * 2.4;
+    const trackTemp = 34.0 - cloud * 7.0 - state.wetness * 9.0;
+
+    return {
+        ambientTemp: ambient,
+        trackTemp,
+        raining: rain,
+        darkCloud: cloud,
+        wind: { x: Math.cos(tS / 180) * (3 + rain * 6), y: 0, z: Math.sin(tS / 180) * (3 + rain * 6) },
+        // The racing line dries first, so min trails avg trails max.
+        minPathWetness: state.wetness * 0.75,
+        avgPathWetness: state.wetness,
+        maxPathWetness: Math.min(1, state.wetness * 1.25),
+    };
+}
+
+/**
  * A plausible circuit outline, integrated from the corner list.
  *
  * The earlier version emitted cos/sin positions, which drew a perfect circle
@@ -81,6 +124,7 @@ function* syntheticFrames({
     let elapsed = startET;
     let frameNo = 0;
     let lastLapTime = -1;
+    const weatherState = { wetness: 0 };
 
     for (let lap = 1; lap <= laps; lap++) {
         const lapStartET = elapsed;
@@ -137,6 +181,8 @@ function* syntheticFrames({
 
                 pos: pathFor(track)(dist),
                 localAccel: { x: steer * 18, y: 0, z: throttle * track.accel - brake * track.decel },
+
+                conditions: weatherAt(elapsed, weatherState),
 
                 wheels: [0, 1, 2, 3].map((i) => ({
                     tempInner: 273.15 + 88 + i, tempCenter: 273.15 + 92 + i, tempOuter: 273.15 + 85 + i,

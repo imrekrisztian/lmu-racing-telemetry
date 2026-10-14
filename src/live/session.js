@@ -7,6 +7,8 @@
 // at 90 Hz is two million frames, and none of them need to be held in memory
 // to answer "am I up or down, and when do I pit".
 
+const { normalizeConditions } = require('../ingest/normalize');
+
 const DEFAULT_OPTS = {
     // Consumption is noisy frame to frame; rate is taken across completed laps.
     consumptionWindowLaps: 3,
@@ -32,6 +34,7 @@ class LiveSession {
         this.bestLapS = null;
         this.lapHistory = [];        // { lap, timeS, fuelUsed }
         this.sample = null;
+        this.conditions = null;
         this.lapStartLevel = null;   // fuel or VE at the start of this lap
         this.level = null;
         this.stintLaps = 0;
@@ -57,6 +60,7 @@ class LiveSession {
         this.distM = s.dist_m ?? 0;
         this.level = s.fuel_l ?? this.level;
         this.sample = s;
+        if (s.conditions) this.conditions = normalizeConditions(s.conditions);
 
         // --- live delta ----------------------------------------------------
         // Positive means down on the reference at this point on track.
@@ -146,6 +150,7 @@ class LiveSession {
                 lapsLeft,
                 consistencySd: this.consistencySd(),
             },
+            conditions: this.conditions,
             history: this.lapHistory.slice(-12),
         };
     }

@@ -76,6 +76,26 @@ class Writer {
         return lapId;
     }
 
+    /**
+     * Conditions are a session-level time series, not a per-sample channel:
+     * weather moves over minutes, so one row every couple of seconds captures
+     * everything without bloating the sample table by ten columns.
+     */
+    async writeConditions(sessionId, rows) {
+        for (const c of rows) {
+            await this.con.run(
+                `INSERT OR REPLACE INTO conditions
+                 (session_id, at_s, air_temp_c, track_temp_c, raining, cloud,
+                  wind_ms, wind_dir_rad, wetness_min, wetness_avg, wetness_max)
+                 VALUES (?::UUID, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [sessionId, c.at_s, c.air_temp_c ?? null, c.track_temp_c ?? null,
+                 c.raining ?? null, c.cloud ?? null, c.wind_ms ?? null, c.wind_dir_rad ?? null,
+                 c.wetness_min ?? null, c.wetness_avg ?? null, c.wetness_max ?? null]
+            );
+        }
+        return rows.length;
+    }
+
     _appendSample(lapUuid, row) {
         const a = this.appender;
         for (const col of this.columns) {
