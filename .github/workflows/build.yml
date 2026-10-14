@@ -20,6 +20,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The renderer is a build artefact and is gitignored, so build it before
+      # testing -- otherwise the bundle check silently skips in the one place
+      # it is most worth running.
+      - run: npm run ui:build
       - run: npm test
 
   windows:
