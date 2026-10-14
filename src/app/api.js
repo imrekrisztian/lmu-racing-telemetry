@@ -16,6 +16,7 @@ const E = require('../engineer/engine');
 const FB = require('../engineer/feedback');
 const { planRace } = require('../strategy/planner');
 const DEG = require('../analysis/degradation');
+const LC = require('../strategy/lift-and-coast');
 const { assessLive } = require('../strategy/live');
 
 const rows = async (con, sql, params) =>
@@ -215,6 +216,82 @@ async function degradation(con, { sessionId, fuelEffectSPerL, wearLimit } = {}) 
 
 function optimalStint(_con, params) { return DEG.optimalStintLaps(params); }
 
+/**
+ * Lift-and-coast coaching for a lap.
+ *
+ * Coast deceleration and fuel flow are MEASURED from this lap rather than
+ * assumed, because a guessed drag figure makes the advice decorative. If the
+ * driver never coasts there is nothing to learn from and the physical fallback
+ * is used -- the result says which happened.
+ */
+async function liftAndCoast(con, { track, lapId, targetSaving, maxTimeLossS } = {}) {
+    assertUuid(lapId, 'lapId');
+
+    // Coast deceleration, from samples with neither pedal applied. Consecutive
+    // samples only -- a gap spans two separate coasting episodes and the
+    // apparent deceleration across it is meaningless.
+    const coastRows = await rows(con, `
+        WITH c AS (
+            SELECT t_s, speed_ms,
+                   lag(t_s)      OVER (ORDER BY t_s) AS pt,
+                   lag(speed_ms) OVER (ORDER BY t_s) AS pv
+            FROM samples
+            WHERE lap_id = '${lapId}' AND throttle < 0.05 AND brake < 0.05 AND speed_ms > 15
+        )
+        SELECT speed_ms, (pv - speed_ms) / (t_s - pt) AS decel_ms2
+        FROM c WHERE pt IS NOT NULL AND t_s - pt BETWEEN 0.005 AND 0.2
+    `);
+    const coast = LC.fitCoastModel(coastRows.map((r) => ({
+        speed_ms: n(r.speed_ms), decel_ms2: n(r.decel_ms2),
+    })));
+
+    // Fuel flow while on throttle, from what the lap actually burned.
+    const [fuelRow] = await rows(con, `
+        SELECT max(fuel_l) - min(fuel_l)                                   AS used,
+               max(t_s)                                                    AS lap_s,
+               count(*) FILTER (WHERE throttle > 0.5)::DOUBLE / count(*)   AS on_throttle
+        FROM samples WHERE lap_id = '${lapId}'
+    `);
+    const used = n(fuelRow?.used) ?? 0;
+    const lapS = n(fuelRow?.lap_s) ?? 0;
+    const onThrottle = n(fuelRow?.on_throttle) ?? 0;
+    const fuelRatePerS = lapS > 0 && onThrottle > 0 ? used / (lapS * onThrottle) : 0;
+
+    // Zones: each corner, with the straight that leads into it.
+    const segs = await rows(con,
+        `SELECT seg_num, kind, start_m, end_m, apex_m, min_speed_ms, entry_speed_ms
+         FROM track_segments WHERE track = ? ORDER BY seg_num`, [track]);
+
+    const zones = [];
+    for (let i = 0; i < segs.length; i++) {
+        if (String(segs[i].kind) !== 'corner') continue;
+        const prev = segs[i - 1];
+        const approachM = prev && String(prev.kind) === 'straight'
+            ? n(prev.end_m) - n(prev.start_m) : 0;
+        const entry = n(segs[i].entry_speed_ms);
+        const apex = n(segs[i].min_speed_ms);
+        if (!(entry > 0) || !(apex > 0) || approachM < 20) continue;
+        zones.push({
+            seg_num: Number(segs[i].seg_num),
+            entrySpeedMs: entry, apexSpeedMs: apex, approachM,
+            capacityM: LC.maxUsableLiftM({ entrySpeedMs: entry, apexSpeedMs: apex, approachM }, coast, LC.DEFAULTS.brakeDecel),
+            dropKmh: (entry - apex) * 3.6,
+        });
+    }
+
+    const plan = targetSaving > 0
+        ? LC.planLiftAndCoast({ zones, coast, fuelRatePerS, targetSaving, maxTimeLossS: maxTimeLossS ?? Infinity })
+        : null;
+
+    return {
+        coast: { k: coast.k, c: coast.c, measured: coast.measured, samples: coast.samples,
+                 atKmh: [150, 250, 320].map((kmh) => ({ kmh, decel: coast.at(kmh / 3.6) })) },
+        fuel: { usedPerLap: used, lapS, onThrottleFraction: onThrottle, ratePerS: fuelRatePerS },
+        zones: zones.sort((a, b) => b.capacityM - a.capacityM),
+        plan,
+    };
+}
+
 const recordFeedback = (con, opts) => FB.recordFeedback(con, opts);
 const ruleScores = (con) => FB.ruleScores(con);
 
@@ -225,7 +302,7 @@ function strategyLive(_con, params) { return assessLive(params); }
 const API = {
     listSessions, listLaps, lapTrace, lapDelta, trackSegments, segmentLosses,
     deriveSegments, runEngineer, pastAdvice, recordFeedback, ruleScores,
-    strategy, strategyLive, degradation, optimalStint,
+    strategy, strategyLive, degradation, optimalStint, liftAndCoast,
 };
 
 /** Names the preload bridge exposes; keeps main and renderer in step. */

@@ -559,3 +559,39 @@ Other details that earn their place:
   the stint, and which corner it is tells you about setup.
 - **Optimal stint length** minimises `pitLoss/n + base + deg*(n-1)/2`, giving
   `n = sqrt(2·pitLoss/deg)`, capped by what fuel and tyres physically allow.
+
+### Fuel saving and lift-and-coast coaching
+
+The cheapest energy on a lap sits immediately before a heavy braking zone:
+that kinetic energy was about to become brake heat anyway. So the question is
+never "should I lift" but **where, and how much is each corner worth**.
+
+Everything is measured from the car's own telemetry. Coast deceleration is
+fitted as `a = k·v² + c` from samples where the driver is already off both
+pedals; fuel flow comes from what the lap actually burned divided by time on
+throttle. A guessed drag coefficient would make the advice decorative, so when
+a lap contains no coasting the fallback model is used **and declared**.
+
+**The physics.** The driver lifts `liftM` before their normal braking point and
+stays off both pedals until the car genuinely needs to brake — there is no
+getting back on the throttle in between. Arriving slower means less braking
+distance, so the brake point moves later too; coasting continues until distance
+remaining equals braking distance, giving `coast = liftM · b/(b−a)`.
+
+**What actually makes heavy zones dominant.** Not efficiency per metre — that
+is only ~9% better, because coast deceleration is small next to braking
+deceleration either way. It is **capacity**: a zone shedding 260 km/h can
+absorb ~770 m of lift before the car falls below corner speed, while one
+shedding 30 km/h saturates at ~190 m. A flat-out section offers none at all and
+is refused.
+
+**The planner is greedy on marginal return, not absolute.** Within a zone the
+returns diminish, so the smallest lift always has the best absolute ratio — a
+greedy comparing absolute ratios takes the minimum lift everywhere, spreads
+crumbs across the lap and never reaches the target. That is exactly what the
+first version did. Comparing *extra* energy per *extra* second equalises
+marginal return across corners, which is both optimal on concave frontiers and
+how an engineer actually works: lean on the best corner until it stops paying.
+
+Output is what a driver can act on: *lift 63 m early at turns 8, 10 and 12 —
+saves 0.151 %VE per lap, costs 0.076 s*.

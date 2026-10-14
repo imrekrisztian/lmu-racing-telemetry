@@ -19,7 +19,7 @@ const NAMES = [
     'listSessions', 'listLaps', 'lapTrace', 'lapDelta', 'trackSegments',
     'segmentLosses', 'deriveSegments', 'runEngineer', 'pastAdvice',
     'recordFeedback', 'ruleScores', 'strategy', 'strategyLive',
-    'degradation', 'optimalStint',
+    'degradation', 'optimalStint', 'liftAndCoast',
 ];
 
 const api = {};

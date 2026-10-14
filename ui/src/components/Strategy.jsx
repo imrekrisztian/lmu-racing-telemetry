@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api.js';
 import { duration, lapTime } from '../format.js';
 import Degradation from './Degradation.jsx';
+import FuelSaving from './FuelSaving.jsx';
 
 // Hypercar and LMGT3 burn a Virtual Energy allowance; LMP2 burns fuel. The
 // form follows the class so the units on screen are never the wrong ones.
@@ -19,7 +20,7 @@ const FIELDS = [
     ['tyreStintLaps', 'Tyre life (laps)', ''],
 ];
 
-export default function Strategy({ sessionId }) {
+export default function Strategy({ sessionId, track, lapId }) {
     const [carClass, setCarClass] = useState('Hyper');
     const [form, setForm] = useState(Object.fromEntries(FIELDS.map(([k, , d]) => [k, d])));
     const [plan, setPlan] = useState(null);
@@ -76,6 +77,11 @@ export default function Strategy({ sessionId }) {
             </div>
 
             {error && <div className="err">{error}</div>}
+
+            {track && lapId && (
+                <FuelSaving track={track} lapId={lapId}
+                            unit={carClass === 'LMP2' ? 'L' : '%VE'} />
+            )}
 
             {sessionId && (
                 <Degradation
