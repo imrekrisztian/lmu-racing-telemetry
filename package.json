@@ -1,6 +1,6 @@
 {
   "name": "lmu-racing-telemetry",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Telemetry, strategy and engineering tool for Le Mans Ultimate",
   "main": "src/app/main.js",
