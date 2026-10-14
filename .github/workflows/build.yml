@@ -37,6 +37,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run dist:win
+      # Both targets emit .exe. If their names ever collide again one silently
+      # overwrites the other, and the release ships the wrong binary.
+      - name: Check both installers were produced
+        shell: bash
+        run: |
+          ls -la release/
+          test -f release/*Setup*.exe || { echo "::error::NSIS installer missing"; exit 1; }
+          test -f release/*Portable*.exe || { echo "::error::portable build missing"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer

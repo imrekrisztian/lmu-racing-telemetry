@@ -188,16 +188,22 @@ async function main() {
     }
     if (DRY) { warn('would follow the run with gh'); return; }
 
-    // The run takes a moment to appear after the tag lands.
+    // Match the run to THIS tag. Taking the most recent run instead picks up
+    // the previous release's run, because the new one has not been created yet
+    // when we first look -- which is how a failed older build got reported as
+    // the result of a fresh release.
     let runId = null;
     for (let i = 0; i < 20 && !runId; i++) {
-        const r = tryRun('gh', ['run', 'list', '--workflow', WORKFLOW, '--limit', '1',
-            '--json', 'databaseId,headBranch,status']);
+        const r = tryRun('gh', ['run', 'list', '--workflow', WORKFLOW,
+            '--branch', tag, '--limit', '1', '--json', 'databaseId,status']);
         if (r.status === 0 && r.stdout.trim()) {
             const [run] = JSON.parse(r.stdout);
             if (run) runId = run.databaseId;
         }
-        if (!runId) await new Promise((res) => setTimeout(res, 3000));
+        if (!runId) {
+            if (i === 0) say(`   ${C.dim}waiting for the run to appear…${C.off}`);
+            await new Promise((res) => setTimeout(res, 3000));
+        }
     }
     if (!runId) {
         warn('Could not find the run; it may still be queueing.');

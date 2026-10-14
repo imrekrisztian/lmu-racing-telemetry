@@ -31,15 +31,22 @@ win:
       arch: [x64]
     - target: portable
       arch: [x64]
-  artifactName: ${productName} ${version} ${arch}.${ext}
+  # NO global artifactName here. Both targets emit .exe, so a single template
+  # names them identically and the second build silently overwrites the first --
+  # which is how a release ended up carrying the portable build labelled as the
+  # installer. Each target names itself below.
 
 nsis:
+  artifactName: ${productName} Setup ${version} ${arch}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: LMU Racing Telemetry
+
+portable:
+  artifactName: ${productName} Portable ${version} ${arch}.${ext}
 
 mac:
   target:
