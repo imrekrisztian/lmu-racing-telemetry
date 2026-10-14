@@ -385,3 +385,43 @@ the reference trace was being aligned by array index instead of distance (which
 drifts whenever two laps have different bin counts), and advice was replaying
 in insertion order, putting `suggest` findings above `strong` ones and quietly
 undoing the engine's ranking in the one place the driver sees it.
+
+## Live view
+
+A pit-wall display: live delta against a reference lap, speed and pedals,
+measured consumption, laps remaining on the current load, tyre corners and
+recent-lap history.
+
+```
+npm run app:dev -- demo.duckdb     # Live tab → pick a lap → Start replay
+```
+
+### Why it works without a sim
+
+The data source is swappable. `ReplaySource` plays recorded laps back at
+wall-clock pace (1× to 10×); the shared-memory reader on Windows will expose
+the same start/stop shape, and the view cannot tell them apart. That makes the
+live view buildable on a machine with no sim attached — and gives you stint
+replay for review afterwards, which is worth having regardless.
+
+Emission is driven by a clock rather than by the samples: each tick picks the
+sample nearest the current playback time, so the UI runs at a steady 30 Hz
+whether the source recorded at 10 Hz or 90 Hz.
+
+### Live delta
+
+A reference lap is reduced to one thing: how long it had taken by each point on
+track. Live delta is then a subtraction — your time so far minus the
+reference's time at the same distance — which is exactly what an in-car delta
+bar shows. Verified two ways: a lap replayed against itself holds delta under
+0.05s for a full lap, and against a different lap it converges on the real
+lap-time gap by the line.
+
+### What makes it more than a planner
+
+`SimEndurance` and friends are calculators: you type a consumption figure in.
+Here the figure is **measured**. `Laps left` comes from fuel actually burned
+over recent laps, so it tracks traffic, weather and how the driver is lifting,
+and it turns red with a BOX THIS LAP banner when the load will not see two more
+laps. Consistency (σ of recent lap times) sits alongside it, because endurance
+is won on spread rather than on one quick lap.

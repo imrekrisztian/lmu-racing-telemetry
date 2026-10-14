@@ -24,4 +24,10 @@ const NAMES = [
 const api = {};
 for (const n of NAMES) api[n] = bridge?.[n] ?? missing(n);
 
+// Streaming surface.
+api.liveStart = bridge?.liveStart ?? missing('liveStart');
+api.liveStop = bridge?.liveStop ?? (() => Promise.resolve());
+api.onLiveTick = bridge?.onLiveTick ?? (() => () => {});
+api.onLiveEnd = bridge?.onLiveEnd ?? (() => () => {});
+
 export default api;

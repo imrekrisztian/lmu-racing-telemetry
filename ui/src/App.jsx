@@ -4,8 +4,9 @@ import { lapTime } from './format.js';
 import Compare from './components/Compare.jsx';
 import Engineer from './components/Engineer.jsx';
 import Strategy from './components/Strategy.jsx';
+import Live from './components/Live.jsx';
 
-const TABS = [['compare', 'Compare'], ['engineer', 'Engineer'], ['strategy', 'Strategy']];
+const TABS = [['live', 'Live'], ['compare', 'Compare'], ['engineer', 'Engineer'], ['strategy', 'Strategy']];
 
 export default function App() {
     const [sessions, setSessions] = useState([]);
@@ -114,6 +115,7 @@ export default function App() {
 
                 <div className="content">
                     {error && <div className="err">{error}</div>}
+                    {tab === 'live' && <Live laps={laps} lapA={a} lapB={b} />}
                     {tab === 'compare' && <Compare track={track} lapA={a} lapB={b} />}
                     {tab === 'engineer' && <Engineer track={track} lapA={a} lapB={b} laps={laps} />}
                     {tab === 'strategy' && <Strategy />}

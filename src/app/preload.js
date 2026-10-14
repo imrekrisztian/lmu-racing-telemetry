@@ -19,4 +19,24 @@ for (const name of API_NAMES) {
     };
 }
 
+// Live streaming is push, not request/response, so it gets its own handful of
+// methods rather than being squeezed into the generated surface above.
+bridge.liveStart = async (payload) => {
+    const res = await ipcRenderer.invoke('live:start', payload);
+    if (!res?.ok) throw new Error(res?.error ?? 'live:start failed');
+    return res.value;
+};
+bridge.liveStop = () => ipcRenderer.invoke('live:stop');
+
+bridge.onLiveTick = (cb) => {
+    const handler = (_e, snap) => cb(snap);
+    ipcRenderer.on('live:tick', handler);
+    return () => ipcRenderer.removeListener('live:tick', handler);
+};
+bridge.onLiveEnd = (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('live:end', handler);
+    return () => ipcRenderer.removeListener('live:end', handler);
+};
+
 contextBridge.exposeInMainWorld('lmu', Object.freeze(bridge));
