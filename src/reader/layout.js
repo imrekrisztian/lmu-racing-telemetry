@@ -15,6 +15,11 @@
 // silently wrong.
 // ---------------------------------------------------------------------------
 
+// LMU inherits rF2's full buffer set, but not every buffer is driven. LMU has
+// no full course yellow and no safety car, so the Rules buffer and scoring's
+// YellowFlagState / SectorFlag fields are almost certainly inert here --
+// present in the layout because the engine defines them, never populated.
+// Confirm with the probe (--buffer Rules) before building anything on them.
 const BUFFERS = {
     Telemetry: '$rFactor2SMMP_Telemetry$',
     Scoring: '$rFactor2SMMP_Scoring$',
