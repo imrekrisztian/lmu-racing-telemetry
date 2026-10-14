@@ -232,3 +232,25 @@ table.standings tr.my-class td:nth-child(2) { color: #fff; }
 .wetness-bar i.avg { left: 0; background: rgba(96,165,250,.55); }
 .wetness-bar i.span { background: rgba(96,165,250,.9); border-left: 1px solid #93c5fd; border-right: 1px solid #93c5fd; }
 .wetness-nums { font-size: 10px; color: var(--muted); margin-top: 3px; text-align: right; }
+
+/* ---------- tyre choice ---------- */
+.compound-row { display: flex; gap: 5px; flex-wrap: wrap; }
+.compound {
+    display: flex; align-items: center; gap: 5px; flex: 1 1 auto;
+    background: var(--bg); border: 1px solid var(--line); color: var(--muted);
+    border-radius: 5px; padding: 5px 8px; cursor: pointer; font-size: 11px;
+}
+.compound i { width: 9px; height: 9px; border-radius: 50%; display: block; }
+.compound:hover { color: var(--text); }
+.compound.fitted { border-color: var(--mine); color: #fff; background: rgba(56,189,248,.1); }
+.compound.advised::after { content: '★'; margin-left: auto; color: var(--suggest); font-size: 10px; }
+
+.tyre-advice { margin-top: 10px; border-radius: 6px; padding: 9px 10px; border: 1px solid var(--line); }
+.tyre-advice.change { border-color: rgba(239,68,68,.5); background: rgba(239,68,68,.08); }
+.tyre-advice.hold { border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.06); }
+.tyre-advice-head { display: flex; justify-content: space-between; align-items: baseline;
+                    font-size: 12px; letter-spacing: .04em; }
+.tyre-advice-head b { color: #fff; }
+.tyre-reasons { margin: 7px 0 0; padding-left: 15px; font-size: 11px; color: #9fb0c4; }
+.tyre-reasons li { margin-bottom: 3px; }
+.crossover { display: flex; gap: 12px; margin-top: 7px; font-size: 10px; color: var(--suggest); }

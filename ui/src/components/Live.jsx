@@ -4,6 +4,7 @@ import DeltaStrip from './DeltaStrip.jsx';
 import TrackMap from './TrackMap.jsx';
 import Standings from './Standings.jsx';
 import Weather from './Weather.jsx';
+import TyreChoice from './TyreChoice.jsx';
 import { lapTime, delta } from '../format.js';
 
 const SPEEDS = [1, 2, 4, 10];
@@ -17,7 +18,7 @@ function tyreColour(c) {
     return '#ef4444';
 }
 
-export default function Live({ laps, lapA, lapB, track }) {
+export default function Live({ laps, lapA, lapB, track, carClass = 'Hyper' }) {
     const [snap, setSnap] = useState(null);
     const [running, setRunning] = useState(false);
     const [speed, setSpeed] = useState(2);
@@ -27,6 +28,7 @@ export default function Live({ laps, lapA, lapB, track }) {
     const [map, setMap] = useState(null);
     const [losses, setLosses] = useState([]);
     const weatherHistory = useRef([]);
+    const [fitted, setFitted] = useState(null);
 
     useEffect(() => {
         const offTick = api.onLiveTick((s) => {
@@ -165,6 +167,12 @@ export default function Live({ laps, lapA, lapB, track }) {
                 <div className="panel">
                     <h3>Conditions</h3>
                     <Weather conditions={snap?.conditions} history={weatherHistory.current} />
+                </div>
+
+                <div className="panel">
+                    <h3>Tyres — compound</h3>
+                    <TyreChoice carClass={carClass} conditions={snap?.conditions}
+                                history={weatherHistory.current} fitted={fitted} onFit={setFitted} />
                 </div>
 
                 <div className="panel">

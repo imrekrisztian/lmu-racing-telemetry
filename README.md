@@ -486,3 +486,38 @@ wetness are plotted together and the gap between them is the thing to read. The
 synthetic model uses a 70s wet-up and 300s dry-out time constant; an earlier
 version applied the lag per frame, which at 90Hz saturated instantly and made
 the lag silently vanish.
+
+### Tyre compounds and the wet call
+
+Operating windows are Michelin's published WEC figures, which is what LMU models:
+
+| Compound | Track temp | Conditions | Sidewall |
+|---|---|---|---|
+| Soft | 0–15°C | dry or slightly damp | white |
+| Medium | 15–25°C | dry | yellow |
+| Hard | >25°C | dry, abrasive | red |
+| Wet | — | wet or drying | blue |
+
+**There is no intermediate.** WEC runs slicks or full wets and nothing between,
+which is exactly why the crossover is the hardest call on the pit wall — get it
+wrong in either direction and it costs far more than a tenth. Wets also sit
+outside the dry allocation, so fitting them never costs a set of slicks later.
+
+`recommendCompound()` returns the call *with its reasoning*, because a pit wall
+that says "wets" without saying the track is at 38% and still rising is not
+something a strategist can argue with — and arguing with it is the point. It
+handles four cases: heavy rain commits regardless of current track state; past
+the crossover means wets (with lower conviction if the track is drying, and an
+estimate of how long the wet stint needs to be); a dry track picks the slick
+suited to the surface temperature; and inside the crossover band the **trend**
+decides, since there is no tyre that splits the difference.
+
+A dry line with standing water off it lowers confidence and says so — the
+min/max wetness spread is why those are stored separately.
+
+**The trend uses Theil–Sen, not least squares.** Least squares was the first
+implementation and is the wrong tool: a single corrupt sample at the end of the
+window sits at maximum leverage and flattens a real trend to "steady", which in
+the crossover band flips the tyre call. Theil–Sen's ~29% breakdown point means
+a handful of bad reads cannot move it, and the window is small enough that the
+O(n²) cost is irrelevant.

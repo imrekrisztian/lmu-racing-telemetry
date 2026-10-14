@@ -7,6 +7,9 @@ export default defineConfig({
     // Relative, because production loads over file:// from Electron.
     base: './',
     plugins: [react()],
-    server: { port: 5273, strictPort: true },
+    // Strategy logic is shared with the main process rather than duplicated in
+    // the renderer, so vite must be allowed to read outside ui/.
+    server: { port: 5273, strictPort: true, fs: { allow: [path.resolve(import.meta.dirname, '..')] } },
+
     build: { outDir: 'dist', emptyOutDir: true },
 });

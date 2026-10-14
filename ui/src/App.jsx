@@ -115,7 +115,8 @@ export default function App() {
 
                 <div className="content">
                     {error && <div className="err">{error}</div>}
-                    {tab === 'live' && <Live laps={laps} lapA={a} lapB={b} track={track} />}
+                    {tab === 'live' && <Live laps={laps} lapA={a} lapB={b} track={track}
+                                            carClass={sessions[0]?.car_class ?? 'Hyper'} />}
                     {tab === 'compare' && <Compare track={track} lapA={a} lapB={b} />}
                     {tab === 'engineer' && <Engineer track={track} lapA={a} lapB={b} laps={laps} />}
                     {tab === 'strategy' && <Strategy />}
