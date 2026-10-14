@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import api from '../api.js';
 import DeltaStrip from './DeltaStrip.jsx';
+import TrackMap from './TrackMap.jsx';
+import Standings from './Standings.jsx';
 import { lapTime, delta } from '../format.js';
 
 const SPEEDS = [1, 2, 4, 10];
@@ -14,13 +16,15 @@ function tyreColour(c) {
     return '#ef4444';
 }
 
-export default function Live({ laps, lapA, lapB }) {
+export default function Live({ laps, lapA, lapB, track }) {
     const [snap, setSnap] = useState(null);
     const [running, setRunning] = useState(false);
     const [speed, setSpeed] = useState(2);
     const [error, setError] = useState(null);
     const trace = useRef([]);
     const lastLapNum = useRef(null);
+    const [map, setMap] = useState(null);
+    const [losses, setLosses] = useState([]);
 
     useEffect(() => {
         const offTick = api.onLiveTick((s) => {
@@ -37,6 +41,25 @@ export default function Live({ laps, lapA, lapB }) {
         const offEnd = api.onLiveEnd(() => setRunning(false));
         return () => { offTick(); offEnd(); };
     }, []);
+
+    // The circuit is drawn from the reference lap's own positions, and the
+    // worst segments are highlighted on it, so the map answers "where" rather
+    // than merely showing where the car is.
+    useEffect(() => {
+        if (!lapA) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const m = await api.trackMap({ lapId: (lapB ?? lapA).lap_id });
+                if (!cancelled) setMap(m);
+                if (lapB && track) {
+                    const l = await api.segmentLosses({ track, lapA: lapA.lap_id, lapB: lapB.lap_id });
+                    if (!cancelled) setLosses(l);
+                }
+            } catch { /* a map is a bonus, never a blocker */ }
+        })();
+        return () => { cancelled = true; };
+    }, [lapA?.lap_id, lapB?.lap_id, track]);
 
     const start = useCallback(async () => {
         if (!lapA) return;
@@ -116,6 +139,12 @@ export default function Live({ laps, lapA, lapB }) {
                 </div>
 
                 <div className="panel">
+                    <h3>Track</h3>
+                    <TrackMap map={map} carDistM={snap?.lap.distM}
+                              rivals={snap?.standings ?? []} deltaBySegment={losses} height={230} />
+                </div>
+
+                <div className="panel">
                     <h3>Delta this lap</h3>
                     <DeltaStrip points={trace.current} lapLength={snap?.lap.lapLengthM ?? 1} />
                     <div className="progress"><i style={{ width: `${(snap?.lap.progress ?? 0) * 100}%` }} /></div>
@@ -156,6 +185,17 @@ export default function Live({ laps, lapA, lapB }) {
                 </div>
 
                 <div className="panel" style={{ gridColumn: '1 / -1' }}>
+                    <h3>Field</h3>
+                    <Standings cars={snap?.standings ?? []} myClass="Hyper" />
+                    <div className="inferred-note">
+                        Energy per car comes from <code>/rest/watch/standings</code>. What a rival did
+                        in the box is inferred: the energy jump across the stop says whether they
+                        fuelled, and stationary time the fuel cannot account for says they probably
+                        took tyres. Nothing in the sim reports a tyre change directly.
+                    </div>
+                </div>
+
+                <div className="panel" style={{ gridColumn: '1 / -1' }}>
                     <h3>Recent laps</h3>
                     <table>
                         <thead>
@@ -166,7 +206,8 @@ export default function Live({ laps, lapA, lapB }) {
                                 <tr key={l.lap}>
                                     <td className="num">{l.lap}</td>
                                     <td className="r num">{lapTime(l.timeS)}</td>
-                                    <td className={`r num ${snap.lap.bestLapS && l.timeS > snap.lap.bestLapS ? 'loss' : 'gain'}`}>
+                                    {/* Float noise made an identical lap read as slower. */}
+                                    <td className={`r num ${snap.lap.bestLapS && l.timeS > snap.lap.bestLapS + 1e-3 ? 'loss' : 'gain'}`}>
                                         {snap.lap.bestLapS ? delta(l.timeS - snap.lap.bestLapS) : '—'}
                                     </td>
                                     <td className="r num">{l.fuelUsed == null ? '—' : l.fuelUsed.toFixed(2)}</td>

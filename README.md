@@ -425,3 +425,29 @@ over recent laps, so it tracks traffic, weather and how the driver is lifting,
 and it turns red with a BOX THIS LAP banner when the load will not see two more
 laps. Consistency (σ of recent lap times) sits alongside it, because endurance
 is won on spread rather than on one quick lap.
+
+### Track map
+
+The circuit is drawn from the recording's own world positions — no track files,
+no per-venue artwork, and any circuit draws itself after one lap has been run
+on it. The three worst corners are painted onto it, centred on the apex, so the
+map answers *where* rather than just showing where the car is. Rivals appear as
+dots, dimmed when they are in the pits.
+
+### The field, and what can honestly be said about a rival's stop
+
+Shared-memory scoring carries every vehicle: place, class, lap, lap distance,
+gaps and pit state. LMU's `/rest/watch/standings` adds the one thing shared
+memory has not got — **`fuelFraction` and `veFraction` per car**. That is why a
+rival's remaining energy is visible at all.
+
+Nothing in the sim reports "they fitted tyres". Two things are derived, and the
+UI labels them as derived:
+
+| Shown | How |
+|---|---|
+| **Fuelled, and how much** | Reliable. Their energy fraction jumps across the stop; the size of the jump is what went in |
+| **Tyres?** | A judgement. Work out how long the stop *should* have taken for the energy they took on, and compare with how long they actually stood still. Roughly 25s that fuel cannot explain means tyres |
+
+Per-car consumption and laps-remaining come from each rival's own energy trace,
+with the refuel jump excluded so it cannot pollute the estimate.

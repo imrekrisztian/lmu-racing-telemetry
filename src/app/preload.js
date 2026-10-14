@@ -27,6 +27,11 @@ bridge.liveStart = async (payload) => {
     return res.value;
 };
 bridge.liveStop = () => ipcRenderer.invoke('live:stop');
+bridge.trackMap = async (payload) => {
+    const res = await ipcRenderer.invoke('live:trackMap', payload);
+    if (!res?.ok) throw new Error(res?.error ?? 'trackMap failed');
+    return res.value;
+};
 
 bridge.onLiveTick = (cb) => {
     const handler = (_e, snap) => cb(snap);

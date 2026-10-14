@@ -29,6 +29,41 @@ const DEFAULT_TRACK = {
 const SCORING_HZ = 5;
 
 /**
+ * A plausible circuit outline, integrated from the corner list.
+ *
+ * The earlier version emitted cos/sin positions, which drew a perfect circle
+ * on the track map -- correct code, meaningless shape. Walking a heading down
+ * straights and turning through each corner produces something that at least
+ * looks like a racing circuit, so the map is worth looking at before real
+ * position data exists.
+ */
+function buildPath(track) {
+    const STEP = 5;                       // metres per integration step
+    const turnArc = 140;                  // metres spent turning in each corner
+    const turnEach = (Math.PI * 2) / track.corners.length;   // closes the loop
+
+    const pts = [];
+    let x = 0, z = 0, heading = 0;
+    for (let d = 0; d <= track.lengthM; d += STEP) {
+        const corner = track.corners.find((c) => Math.abs(d - c.dist) < turnArc / 2);
+        if (corner) heading += (turnEach / turnArc) * STEP;
+        x += Math.cos(heading) * STEP;
+        z += Math.sin(heading) * STEP;
+        pts.push({ d, x, z });
+    }
+    return (dist) => {
+        const i = Math.max(0, Math.min(pts.length - 1, Math.round(dist / STEP)));
+        return { x: pts[i].x, y: 0, z: pts[i].z };
+    };
+}
+
+const PATH_CACHE = new WeakMap();
+function pathFor(track) {
+    if (!PATH_CACHE.has(track)) PATH_CACHE.set(track, buildPath(track));
+    return PATH_CACHE.get(track);
+}
+
+/**
  * Generate frames for one or more laps.
  * `skill` scales corner speed: 1.02 is a driver carrying 2% more apex speed,
  * which produces a cleanly comparable faster lap.
@@ -100,7 +135,7 @@ function* syntheticFrames({
                 fuel: 60 - (lap - 1) * 4 - (dist / track.lengthM) * 4,
                 rearBrakeBias: 0.43,
 
-                pos: { x: Math.cos(dist / 400) * 900, y: 0, z: Math.sin(dist / 400) * 900 },
+                pos: pathFor(track)(dist),
                 localAccel: { x: steer * 18, y: 0, z: throttle * track.accel - brake * track.decel },
 
                 wheels: [0, 1, 2, 3].map((i) => ({

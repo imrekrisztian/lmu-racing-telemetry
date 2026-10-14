@@ -15,6 +15,9 @@ const { API, API_NAMES } = require('./api');
 const { ReplaySource } = require('../live/replay');
 const { LiveSession } = require('../live/session');
 const { loadReference } = require('../live/reference');
+const { StandingsTracker } = require('../live/standings');
+const { CompetitorSim } = require('../live/competitor-sim');
+const { buildTrackMap } = require('../analysis/track-map');
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 
@@ -70,9 +73,16 @@ function registerLiveHandlers() {
             const session = new LiveSession({ reference });
             const source = await new ReplaySource(con, { lapIds, speed }).load();
 
+            // Competitors: synthetic for now. On Windows this is scoring plus
+            // /rest/watch/standings, feeding the same tracker.
+            const field = new CompetitorSim({ trackLengthM: reference?.maxDist ?? undefined });
+            const standings = new StandingsTracker();
+
             source.start(
                 (sample, progress) => {
                     const snap = session.update(sample);
+                    const clockS = (sample.elapsedTime ?? 0);
+                    snap.standings = standings.update(field.step(clockS), clockS);
                     sendToRenderer('live:tick', { ...snap, progress });
                 },
                 () => sendToRenderer('live:end'),
@@ -85,6 +95,11 @@ function registerLiveHandlers() {
     });
 
     ipcMain.handle('live:stop', async () => { stopLive(); return { ok: true, value: true }; });
+
+    ipcMain.handle('live:trackMap', async (_e, { lapId }) => {
+        try { return { ok: true, value: await buildTrackMap(con, { lapId }) }; }
+        catch (err) { return { ok: false, error: err.message }; }
+    });
 }
 
 function registerHandlers() {
@@ -165,6 +180,12 @@ async function createWindow() {
             process.stdout.write('survived closing the window mid-stream\n');
             app.exit(0);
             return;
+        }
+
+        if (process.env.LMU_SMOKE_SCROLL) {
+            await win.webContents.executeJavaScript(
+                `document.querySelector('.content').scrollTop = ${Number(process.env.LMU_SMOKE_SCROLL)}`);
+            await new Promise((r) => setTimeout(r, 400));
         }
 
         await new Promise((r) => setTimeout(r, 2500));
