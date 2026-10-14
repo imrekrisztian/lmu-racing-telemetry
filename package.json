@@ -1,0 +1,16 @@
+{
+  "name": "lmu-delta",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telemetry, strategy and engineering tool for Le Mans Ultimate",
+  "main": "src/reader/probe.js",
+  "scripts": {
+    "probe": "node src/reader/probe.js",
+    "probe:scoring": "node src/reader/probe.js --buffer Scoring",
+    "test": "node test/smoke.js"
+  },
+  "dependencies": {
+    "@duckdb/node-api": "^1.5.6-r.1",
+    "koffi": "^2.14.1"
+  }
+}

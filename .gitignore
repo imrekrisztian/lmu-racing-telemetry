@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# recorded telemetry — these get large fast, and they are data, not source
+*.duckdb
+*.duckdb.wal
+*.parquet
+
+# build output
+dist/
+build/
+out/
+
+# local config / secrets
+.env
+.env.local
+
+# os
+.DS_Store
+Thumbs.db
