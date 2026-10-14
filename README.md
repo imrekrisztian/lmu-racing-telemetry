@@ -741,3 +741,20 @@ release. `workflow_dispatch` builds one on demand without tagging.
 The packaged app has been verified end to end — native modules load, the schema
 and renderer are read from inside the asar, and the UI renders — though so far
 only in the macOS build, since that is what this machine can run.
+
+### Releasing
+
+```
+npm run release                   :: patch bump, push, tag, build on CI
+npm run release -- --version minor
+npm run release -- --dry-run      :: show the plan, change nothing
+npm run release -- --no-bump      :: tag the current version
+```
+
+It refuses to release from a dirty tree, runs the tests first, checks the tag
+is free, then pushes and tags — the tag is what triggers the Windows build.
+
+With the GitHub CLI installed it follows the run and downloads the installer
+into `release/` when it finishes. Without it, it still pushes and tags, and
+prints where to watch. `gh` is worth installing (`brew install gh && gh auth
+login`); it also removes the push-authentication problem entirely.

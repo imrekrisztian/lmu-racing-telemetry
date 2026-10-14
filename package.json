@@ -15,7 +15,8 @@
     "app": "npm run ui:build && electron src/app/main.js",
     "dist": "npm run ui:build && electron-builder --publish never",
     "dist:win": "npm run ui:build && electron-builder --win --publish never",
-    "dist:dir": "npm run ui:build && electron-builder --dir --publish never"
+    "dist:dir": "npm run ui:build && electron-builder --dir --publish never",
+    "release": "node scripts/release.js"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.6-r.1",
