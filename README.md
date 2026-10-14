@@ -664,3 +664,52 @@ forward" 49 laps and still reported as costing nothing, when moving it that far
 hands its laps to the next stint and breaks the limit; and the synthetic
 forecast was so volatile it produced four crossovers inside half an hour —
 weather no strategist would ever see.
+
+## Running on Windows
+
+The reader needs Windows because LMU does. Everything else is cross-platform,
+so the usual split is: develop the UI and analysis on any machine against
+recorded data, run the real thing next to the sim.
+
+### Prerequisites
+
+- **Node.js 22 or newer** (`node -v`) — [nodejs.org](https://nodejs.org)
+- **Git**, if you are cloning rather than copying the folder
+- Le Mans Ultimate, with `rFactor2SharedMemoryMapPlugin64.dll` installed and
+  enabled (see *Setup* above — mind the leading space in `" Enabled"`)
+
+### Install
+
+```
+git clone https://github.com/imrekrisztian/lmu-racing-telemetry.git
+cd lmu-racing-telemetry
+npm install
+```
+
+If npm reports `1 package has install scripts not yet covered by allowScripts`,
+run `npm install-scripts approve koffi`. koffi ships prebuilt binaries so it
+usually works regardless — approve it only if `require('koffi')` throws.
+
+`npm install` also downloads the Electron binary (~100 MB) the first time.
+
+### Run it
+
+```
+npm run probe                     :: measure the telemetry rate — do this first
+npm run seed -- demo.duckdb       :: synthetic data, so the UI has something to show
+npm run app -- demo.duckdb        :: build the renderer and launch
+npm run app:dev -- demo.duckdb    :: same, with hot reload for UI work
+```
+
+With no database argument the app uses `%APPDATA%\lmu-racing-telemetry\telemetry.duckdb`.
+
+### Order of operations on the Windows machine
+
+1. **`npm run probe`** with LMU in a practice session and the car *on track*.
+   The offset sanity check runs first — if any line reads FAIL, the offsets in
+   `src/reader/layout.js` do not match your plugin build and nothing downstream
+   should be trusted until they do.
+2. The rate it reports decides how much of the telemetry analysis is viable.
+3. `npm test` should pass (197 tests, none of which need the sim).
+4. `npm run app -- demo.duckdb` to confirm the UI runs before any live data
+   exists.
