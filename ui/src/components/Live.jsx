@@ -25,10 +25,26 @@ export default function Live({ laps, lapA, lapB, track, carClass = 'Hyper' }) {
     const [error, setError] = useState(null);
     const trace = useRef([]);
     const lastLapNum = useRef(null);
+    const [liveCheck, setLiveCheck] = useState(null);
+    const [connected, setConnected] = useState(null);
     const [map, setMap] = useState(null);
     const [losses, setLosses] = useState([]);
     const weatherHistory = useRef([]);
     const [fitted, setFitted] = useState(null);
+
+    // Is a live connection possible at all? Answered once, up front, so the
+    // button can say WHY rather than failing when pressed.
+    useEffect(() => { api.liveAvailable().then(setLiveCheck).catch(() => {}); }, []);
+
+    const connect = useCallback(async () => {
+        setError(null);
+        trace.current = [];
+        try {
+            const r = await api.liveConnect({ referenceLapId: lapB?.lap_id ?? null });
+            setConnected(r);
+            setRunning(true);
+        } catch (e) { setError(e.message); }
+    }, [lapB?.lap_id]);
 
     useEffect(() => {
         const offTick = api.onLiveTick((s) => {
@@ -94,7 +110,29 @@ export default function Live({ laps, lapA, lapB, track, carClass = 'Hyper' }) {
 
     const stop = useCallback(async () => { await api.liveStop(); setRunning(false); }, []);
 
-    if (!lapA) return <div className="empty">Pick a lap from the left to replay.</div>;
+    // A live connection needs no recorded lap; replay does.
+    if (!lapA && !connected) {
+        return (
+            <>
+                {error && <div className="err">{error}</div>}
+                <div className="panel live-controls">
+                    <div>
+                        <button className="act primary" onClick={connect} disabled={!liveCheck?.ok}>
+                            Connect to sim
+                        </button>
+                    </div>
+                    <span className="where">
+                        {liveCheck?.ok
+                            ? 'LMU is publishing telemetry — connect to monitor and record the session.'
+                            : liveCheck?.reason ?? 'checking…'}
+                    </span>
+                </div>
+                <div className="empty">
+                    Connect to the sim above, or pick a recorded lap on the left to replay.
+                </div>
+            </>
+        );
+    }
 
     const d = snap?.lap.deltaS;
     const ahead = d != null && d < 0;
@@ -106,14 +144,29 @@ export default function Live({ laps, lapA, lapB, track, carClass = 'Hyper' }) {
 
             <div className="panel live-controls">
                 <div>
+                    <button
+                        className={`act ${liveCheck?.ok ? 'primary' : ''}`}
+                        onClick={running ? stop : connect}
+                        disabled={!liveCheck?.ok && !running}
+                        title={liveCheck?.ok ? 'Read live telemetry from the sim' : liveCheck?.reason ?? ''}
+                    >
+                        {running && connected ? 'Disconnect' : 'Connect to sim'}
+                    </button>
+                    <span className="sep" />
                     <button className="act" onClick={running ? stop : start}>
-                        {running ? 'Stop' : 'Start replay'}
+                        {running && !connected ? 'Stop' : 'Replay a lap'}
                     </button>
                     {SPEEDS.map((s) => (
                         <button key={s} className={`act ${speed === s ? 'done' : ''}`}
                                 onClick={() => setSpeed(s)} disabled={running}>{s}×</button>
                     ))}
                 </div>
+                <span className="where">
+                    {connected
+                        ? `LIVE · ${connected.track ?? 'unknown track'} · ${connected.car ?? ''}` +
+                          (snap?.recorded ? ` · ${snap.recorded} lap(s) recorded` : ' · recording')
+                        : liveCheck && !liveCheck.ok ? liveCheck.reason : ''}
+                </span>
                 <span className="where">
                     from lap {lapA.lap_num}
                     {lapB ? ` · reference lap ${lapB.lap_num} (${lapTime(lapB.lap_time_s)})` : ' · no reference'}

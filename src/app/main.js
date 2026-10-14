@@ -15,6 +15,9 @@ const { API, API_NAMES } = require('./api');
 const { ReplaySource } = require('../live/replay');
 const { LiveSession } = require('../live/session');
 const { loadReference } = require('../live/reference');
+const { ShmSource, available: liveAvailable } = require('../live/shm-source');
+const { LapTracker } = require('../ingest/lap-tracker');
+const { Writer } = require('../ingest/writer');
 const { StandingsTracker } = require('../live/standings');
 const { CompetitorSim } = require('../live/competitor-sim');
 const { buildTrackMap } = require('../analysis/track-map');
@@ -23,6 +26,7 @@ const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 
 let con = null;
 let win = null;
+let currentDatabase = null;
 
 function databasePath() {
     const fromArg = process.argv.find((a) => a.endsWith('.duckdb'));
@@ -65,6 +69,60 @@ function sendToRenderer(channel, payload) {
 }
 
 function registerLiveHandlers() {
+    ipcMain.handle('live:available', async () => ({ ok: true, value: liveAvailable() }));
+
+    /**
+     * Connect to the running sim.
+     *
+     * Does two things at once: drives the dashboard, and RECORDS. A practice
+     * session you watched but did not capture cannot be analysed afterwards,
+     * which defeats most of the point.
+     */
+    ipcMain.handle('live:connect', async (_e, { referenceLapId } = {}) => {
+        try {
+            const check = liveAvailable();
+            if (!check.ok) return { ok: false, error: check.reason };
+
+            stopLive();
+            const reference = referenceLapId
+                ? await loadReference(con, { lapId: referenceLapId }) : null;
+            const session = new LiveSession({ reference });
+            const source = new ShmSource().open();
+
+            // Capture the session as it happens.
+            const writer = await new Writer(con).init();
+            const first = source.readOnce();
+            const sessionId = await writer.createSession({
+                track: first?.trackName || 'Unknown', car: first?.vehicleName || 'Unknown',
+                session_type: 'live', driver: null, sim_version: 'lmu',
+            });
+            const tracker = new LapTracker();
+            let recorded = 0;
+
+            source.start(
+                (sample) => {
+                    const snap = session.update(sample);
+                    const done = tracker.push(sample);
+                    if (done) {
+                        writer.writeLap(sessionId, done)
+                            .then(() => { recorded++; sendToRenderer('live:lap', { recorded }); })
+                            .catch((e) => process.stderr.write(`[record] ${e.message}\n`));
+                    }
+                    sendToRenderer('live:tick', { ...snap, live: true, recorded });
+                },
+                (err) => {
+                    if (err) sendToRenderer('live:error', err.message);
+                    sendToRenderer('live:end');
+                },
+            );
+
+            liveSource = source;
+            return { ok: true, value: { connected: true, track: first?.trackName, car: first?.vehicleName, sessionId } };
+        } catch (err) {
+            return { ok: false, error: err.message };
+        }
+    });
+
     ipcMain.handle('live:start', async (_e, { lapIds, referenceLapId, speed = 1 }) => {
         try {
             stopLive();
@@ -100,6 +158,52 @@ function registerLiveHandlers() {
         try { return { ok: true, value: await buildTrackMap(con, { lapId }) }; }
         catch (err) { return { ok: false, error: err.message }; }
     });
+}
+
+/**
+ * Native file dialogs and switching the active database.
+ *
+ * The packaged app has no command line to pass a path on, so without these a
+ * fresh install opens an empty database in userData with no way to reach a
+ * recording -- which is exactly how it shipped.
+ */
+function registerFileHandlers() {
+    const pick = async (title, buttonLabel) => {
+        const r = await dialog.showOpenDialog(win, {
+            title, buttonLabel, properties: ['openFile'],
+            filters: [{ name: 'Telemetry database', extensions: ['duckdb'] }, { name: 'All files', extensions: ['*'] }],
+        });
+        return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
+    };
+
+    ipcMain.handle('file:openDatabase', async () => {
+        try {
+            const file = await pick('Open telemetry database', 'Open');
+            if (!file) return { ok: true, value: null };
+
+            // Reopen on the new file. The old connection is closed first so the
+            // previous database is not left locked.
+            const previous = con;
+            const opened = await open(file);
+            try { previous?.con?.closeSync?.(); previous?.closeSync?.(); } catch { /* already gone */ }
+            con = opened.con;
+            currentDatabase = file;
+            return { ok: true, value: { file } };
+        } catch (err) {
+            return { ok: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('file:pickReference', async () => {
+        try {
+            const file = await pick('Choose a reference recording', 'Attach');
+            return { ok: true, value: file };
+        } catch (err) {
+            return { ok: false, error: err.message };
+        }
+    });
+
+    ipcMain.handle('file:current', async () => ({ ok: true, value: currentDatabase }));
 }
 
 function registerHandlers() {
@@ -138,6 +242,12 @@ async function createWindow() {
 
     // Surface renderer errors in the terminal; otherwise a blank window is
     // the only symptom of a broken bundle.
+    win.webContents.on('preload-error', (_e, preloadPath, error) => {
+        process.stderr.write(`[preload] FAILED ${preloadPath}: ${error}\n`);
+        dialog.showErrorBox('Preload failed',
+            `${preloadPath}\n\n${error}\n\nThe app cannot talk to its backend.`);
+    });
+
     win.webContents.on('console-message', (_e, level, message) => {
         if (level >= 2) process.stderr.write(`[renderer] ${message}\n`);
     });
@@ -223,8 +333,10 @@ app.whenReady().then(async () => {
         app.quit();
         return;
     }
+    currentDatabase = file;
     registerHandlers();
     registerLiveHandlers();
+    registerFileHandlers();
     await createWindow();
 
     app.on('activate', () => {

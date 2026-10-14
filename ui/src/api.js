@@ -20,6 +20,8 @@ const NAMES = [
     'segmentLosses', 'deriveSegments', 'runEngineer', 'pastAdvice',
     'recordFeedback', 'ruleScores', 'strategy', 'strategyLive',
     'degradation', 'optimalStint', 'liftAndCoast', 'forecast',
+    'attachReferenceFile', 'detachReferenceFile', 'referenceLaps',
+    'referenceLapDelta', 'referenceLapTrace', 'referenceSegmentLosses',
 ];
 
 const api = {};
@@ -29,6 +31,12 @@ for (const n of NAMES) api[n] = bridge?.[n] ?? missing(n);
 api.liveStart = bridge?.liveStart ?? missing('liveStart');
 api.liveStop = bridge?.liveStop ?? (() => Promise.resolve());
 api.trackMap = bridge?.trackMap ?? missing('trackMap');
+api.openDatabase = bridge?.openDatabase ?? missing('openDatabase');
+api.pickReference = bridge?.pickReference ?? missing('pickReference');
+api.currentDatabase = bridge?.currentDatabase ?? missing('currentDatabase');
+api.liveAvailable = bridge?.liveAvailable ?? (() => Promise.resolve(
+    { ok: false, reason: 'not running in Electron' }));
+api.liveConnect = bridge?.liveConnect ?? missing('liveConnect');
 api.onLiveTick = bridge?.onLiveTick ?? (() => () => {});
 api.onLiveEnd = bridge?.onLiveEnd ?? (() => () => {});
 

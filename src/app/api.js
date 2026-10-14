@@ -19,6 +19,7 @@ const DEG = require('../analysis/degradation');
 const LC = require('../strategy/lift-and-coast');
 const FC = require('../strategy/forecast');
 const { syntheticForecast } = require('../reader/synthetic-source');
+const { attachReference } = require('../../db/open');
 const { assessLive } = require('../strategy/live');
 
 const rows = async (con, sql, params) =>
@@ -327,6 +328,112 @@ async function forecast(con, { sessionId, horizonS = 7200, plan, currentLap = 1,
     };
 }
 
+// --------------------------------------------------------------------------
+// Reference files
+//
+// A recorded session is a DuckDB file, so comparing against someone else's
+// laps is an ATTACH rather than an import. The file is mounted READ-ONLY under
+// the alias `ref`, which is why its laps can be joined against yours in a
+// single query without copying anything.
+// --------------------------------------------------------------------------
+
+const REF_ALIAS = 'ref';
+
+async function attachReferenceFile(con, { file }) {
+    try { await con.run(`DETACH ${REF_ALIAS}`); } catch { /* nothing attached */ }
+    await attachReference(con, file, REF_ALIAS);
+    const laps = await referenceLaps(con);
+    return { file, alias: REF_ALIAS, laps };
+}
+
+async function detachReferenceFile(con) {
+    try { await con.run(`DETACH ${REF_ALIAS}`); return { detached: true }; }
+    catch { return { detached: false }; }
+}
+
+/** Laps inside the attached file, shaped like the local ones so the UI can mix them. */
+async function referenceLaps(con) {
+    const r = await rows(con, `
+        SELECT l.lap_id, l.session_id, l.lap_num, l.lap_time_s, l.valid,
+               l.is_out_lap, l.is_in_lap, s.track, s.car, s.driver
+        FROM ${REF_ALIAS}.laps l JOIN ${REF_ALIAS}.sessions s USING (session_id)
+        WHERE l.lap_time_s IS NOT NULL
+        ORDER BY s.started_at, l.lap_num
+    `);
+    return r.map((x) => ({
+        lap_id: String(x.lap_id), session_id: String(x.session_id),
+        lap_num: Number(x.lap_num), lap_time_s: n(x.lap_time_s),
+        valid: x.valid === true, is_out_lap: x.is_out_lap === true, is_in_lap: x.is_in_lap === true,
+        track: String(x.track), car: String(x.car),
+        driver: x.driver == null ? null : String(x.driver),
+        external: true,
+    }));
+}
+
+/**
+ * Delta between one of your laps and one from the attached file.
+ *
+ * The lap_delta macro only knows about local laps, so the cross-file version is
+ * spelled out here. Same mathematics -- the running integral of inverse-speed
+ * difference on the shared 1 m grid.
+ */
+async function referenceLapDelta(con, { lapA, refLapId }) {
+    assertUuid(lapA, 'lapA'); assertUuid(refLapId, 'refLapId');
+    const r = await rows(con, `
+        WITH a AS (SELECT dist_bin, speed_ms FROM lap_binned WHERE lap_id = '${lapA}'),
+             b AS (SELECT dist_bin, speed_ms FROM ${REF_ALIAS}.lap_binned WHERE lap_id = '${refLapId}')
+        SELECT a.dist_bin,
+               sum(1.0 / nullif(a.speed_ms, 0) - 1.0 / nullif(b.speed_ms, 0))
+                 OVER (ORDER BY a.dist_bin ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+                 AS delta_t_s
+        FROM a JOIN b USING (dist_bin) ORDER BY a.dist_bin
+    `);
+    return { dist: r.map((x) => Number(x.dist_bin)), delta: r.map((x) => Number(x.delta_t_s)) };
+}
+
+/** A reference lap's own trace, for overlaying on the charts. */
+async function referenceLapTrace(con, { lapId }) {
+    assertUuid(lapId, 'lapId');
+    const r = await rows(con, `
+        SELECT dist_bin, speed_ms, throttle, brake
+        FROM ${REF_ALIAS}.lap_binned WHERE lap_id = '${lapId}' ORDER BY dist_bin
+    `);
+    return {
+        dist: r.map((x) => Number(x.dist_bin)),
+        speed: r.map((x) => Number(x.speed_ms) * 3.6),
+        throttle: r.map((x) => Number(x.throttle ?? 0) * 100),
+        brake: r.map((x) => Number(x.brake ?? 0) * 100),
+    };
+}
+
+/** Per-segment losses against a lap in the attached file. */
+async function referenceSegmentLosses(con, { track, lapA, refLapId }) {
+    assertUuid(lapA, 'lapA'); assertUuid(refLapId, 'refLapId');
+    const r = await rows(con, `
+        WITH a AS (SELECT dist_bin, speed_ms FROM lap_binned WHERE lap_id = '${lapA}'),
+             b AS (SELECT dist_bin, speed_ms FROM ${REF_ALIAS}.lap_binned WHERE lap_id = '${refLapId}'),
+             d AS (
+               SELECT a.dist_bin,
+                      sum(1.0 / nullif(a.speed_ms, 0) - 1.0 / nullif(b.speed_ms, 0))
+                        OVER (ORDER BY a.dist_bin ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+                        AS delta_t_s
+               FROM a JOIN b USING (dist_bin)
+             )
+        SELECT s.seg_num, s.kind, s.name, s.start_m, s.apex_m, s.end_m,
+               de.delta_t_s - ds.delta_t_s AS lost_s
+        FROM track_segments s
+        ASOF JOIN d ds ON ds.dist_bin <= s.start_m
+        ASOF JOIN d de ON de.dist_bin <= s.end_m
+        WHERE s.track = ? ORDER BY s.seg_num
+    `, [track]);
+    return r.map((x) => ({
+        seg_num: Number(x.seg_num), kind: String(x.kind),
+        name: x.name == null ? null : String(x.name),
+        start_m: n(x.start_m), apex_m: n(x.apex_m), end_m: n(x.end_m),
+        lost_s: n(x.lost_s),
+    }));
+}
+
 const recordFeedback = (con, opts) => FB.recordFeedback(con, opts);
 const ruleScores = (con) => FB.ruleScores(con);
 
@@ -338,6 +445,8 @@ const API = {
     listSessions, listLaps, lapTrace, lapDelta, trackSegments, segmentLosses,
     deriveSegments, runEngineer, pastAdvice, recordFeedback, ruleScores,
     strategy, strategyLive, degradation, optimalStint, liftAndCoast, forecast,
+    attachReferenceFile, detachReferenceFile, referenceLaps,
+    referenceLapDelta, referenceLapTrace, referenceSegmentLosses,
 };
 
 /** Names the preload bridge exposes; keeps main and renderer in step. */

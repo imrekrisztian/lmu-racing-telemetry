@@ -15,6 +15,10 @@ export default function App() {
     const [lapB, setLapB] = useState(null);   // the reference
     const [tab, setTab] = useState(
         () => (typeof window !== 'undefined' && window.location.hash.slice(1)) || 'compare');
+    const [dbFile, setDbFile] = useState(null);
+    const [refFile, setRefFile] = useState(null);
+    const [refLaps, setRefLaps] = useState([]);
+    const [busy, setBusy] = useState(null);
     const [error, setError] = useState(null);
 
     useEffect(() => {
@@ -24,6 +28,7 @@ export default function App() {
         }
         (async () => {
             try {
+                api.currentDatabase().then(setDbFile).catch(() => {});
                 const [s, l] = await Promise.all([api.listSessions(), api.listLaps()]);
                 setSessions(s);
                 setLaps(l);
@@ -46,14 +51,52 @@ export default function App() {
         })();
     }, []);
 
+    /** Reload everything after the active database changes. */
+    const reload = useCallback(async () => {
+        const [s, l] = await Promise.all([api.listSessions(), api.listLaps()]);
+        setSessions(s); setLaps(l); setLapA(null); setLapB(null);
+        setRefFile(null); setRefLaps([]);
+    }, []);
+
+    const openDatabase = useCallback(async () => {
+        setBusy('open');
+        try {
+            const picked = await api.openDatabase();
+            if (picked) { setDbFile(picked.file); await reload(); }
+            setError(null);
+        } catch (e) { setError(e.message); }
+        finally { setBusy(null); }
+    }, [reload]);
+
+    const attachReference = useCallback(async () => {
+        setBusy('ref');
+        try {
+            const file = await api.pickReference();
+            if (!file) return;
+            const res = await api.attachReferenceFile({ file });
+            setRefFile(res.file);
+            setRefLaps(res.laps);
+            setError(res.laps.length === 0 ? 'That file has no completed laps.' : null);
+        } catch (e) { setError(e.message); setRefFile(null); setRefLaps([]); }
+        finally { setBusy(null); }
+    }, []);
+
+    const detachReference = useCallback(async () => {
+        try { await api.detachReferenceFile(); } catch { /* nothing attached */ }
+        setRefFile(null); setRefLaps([]);
+        setLapB((b) => (refLaps.some((l) => l.lap_id === b) ? null : b));
+    }, [refLaps]);
+
     const pick = useCallback((lap, ev) => {
         if (ev.altKey || ev.shiftKey) setLapB(lap.lap_id);
         else setLapA(lap.lap_id);
     }, []);
 
     const track = sessions[0]?.track ?? null;
+    const allLaps = [...laps, ...refLaps];
     const a = laps.find((l) => l.lap_id === lapA) ?? null;
-    const b = laps.find((l) => l.lap_id === lapB) ?? null;
+    const b = allLaps.find((l) => l.lap_id === lapB) ?? null;
+    const shortFile = (f) => (f ? f.split(/[\\/]/).pop() : null);
 
     const bySession = sessions.map((s) => ({
         session: s,
@@ -65,7 +108,21 @@ export default function App() {
             <aside className="sidebar">
                 <div className="brand">
                     LMU Racing Telemetry
-                    <small>{track ?? 'no data'}</small>
+                    <small title={dbFile ?? ''}>{shortFile(dbFile) ?? 'no database'}</small>
+                </div>
+
+                <div className="db-actions">
+                    <button className="act" onClick={openDatabase} disabled={busy === 'open'}>
+                        {busy === 'open' ? 'Opening…' : 'Open recording…'}
+                    </button>
+                    <button className="act" onClick={refFile ? detachReference : attachReference}
+                            disabled={busy === 'ref'}>
+                        {busy === 'ref' ? 'Attaching…' : refFile ? 'Detach reference' : 'Compare with file…'}
+                    </button>
+                </div>
+
+                <div className="pick-hint">
+                    Click a lap to inspect it · <b>Alt-click</b> to set it as the reference
                 </div>
 
                 {bySession.map(({ session, laps: ls }) => (
@@ -96,10 +153,33 @@ export default function App() {
                     </div>
                 ))}
 
-                {laps.length === 0 && !error && <div className="empty">No laps recorded</div>}
-                <div className="group-title" style={{ marginTop: 24 }}>
-                    Click = inspect · Alt-click = reference
-                </div>
+                {refLaps.length > 0 && (
+                    <div className="ref-group">
+                        <div className="group-title">
+                            ◆ {shortFile(refFile)}
+                            <span className="where"> — alt-click to compare</span>
+                        </div>
+                        {refLaps.map((l) => (
+                            <div
+                                key={l.lap_id}
+                                className={`lap-row external ${l.lap_id === lapB ? 'pick-b' : ''}`}
+                                onClick={() => setLapB(l.lap_id)}
+                                title={`${l.driver ?? 'unknown'} · ${l.track}`}
+                            >
+                                <span className="n num">{l.lap_num}</span>
+                                <span className="t num">{lapTime(l.lap_time_s)}</span>
+                                <span className="tag">{l.driver ?? ''}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {laps.length === 0 && !error && (
+                    <div className="empty">
+                        No laps in this database.<br />
+                        <span className="where">Open a recording above, or run the reader.</span>
+                    </div>
+                )}
             </aside>
 
             <main className="main">
@@ -115,7 +195,7 @@ export default function App() {
 
                 <div className="content">
                     {error && <div className="err">{error}</div>}
-                    {tab === 'live' && <Live laps={laps} lapA={a} lapB={b} track={track}
+                    {tab === 'live' && <Live laps={laps} lapA={a} lapB={b?.external ? null : b} track={track}
                                             carClass={sessions[0]?.car_class ?? 'Hyper'} />}
                     {tab === 'compare' && <Compare track={track} lapA={a} lapB={b} />}
                     {tab === 'engineer' && <Engineer track={track} lapA={a} lapB={b} laps={laps} />}

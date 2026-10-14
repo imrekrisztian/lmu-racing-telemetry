@@ -273,3 +273,19 @@ table.standings tr.my-class td:nth-child(2) { color: #fff; }
 .wear-nums { font-size: 12px; }
 
 tr.handover-row td { border-top: 1px solid rgba(245,158,11,.35); }
+
+/* ---------- database actions ---------- */
+.db-actions { display: grid; gap: 5px; margin: 10px 0 8px; }
+.db-actions .act { width: 100%; text-align: left; }
+.pick-hint {
+    font-size: 10px; color: var(--muted); line-height: 1.5;
+    padding: 6px 0 2px; border-bottom: 1px solid var(--line); margin-bottom: 4px;
+}
+.pick-hint b { color: var(--text); }
+
+.ref-group { margin-top: 14px; border-left: 2px solid var(--ref); padding-left: 8px; }
+.lap-row.external .t { color: var(--ref); }
+
+button.act.primary { border-color: var(--mine); color: #fff; background: rgba(56,189,248,.14); }
+button.act.primary:disabled { border-color: var(--line); color: var(--muted); background: none; }
+.sep { display: inline-block; width: 1px; height: 18px; background: var(--line); margin: 0 4px; }

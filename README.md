@@ -758,3 +758,46 @@ With the GitHub CLI installed it follows the run and downloads the installer
 into `release/` when it finishes. Without it, it still pushes and tags, and
 prints where to watch. `gh` is worth installing (`brew install gh && gh auth
 login`); it also removes the push-authentication problem entirely.
+
+## Opening recordings and comparing files
+
+The sidebar has two controls:
+
+- **Open recording…** — switch the active database. The packaged app has no
+  command line to pass a path on, so without this a fresh install opens an
+  empty database in `%APPDATA%` with no way to reach a recording.
+- **Compare with file…** — ATTACH someone else's `.duckdb` read-only. Its laps
+  appear in their own group; alt-click one to use it as the reference.
+
+Cross-file comparison is a real join, not an import — nothing is copied. The
+`lap_delta` macro only knows about local laps, so there are cross-file variants
+of the delta, trace and segment-loss queries using the same mathematics.
+
+Verified against two separate databases: a −2.633s cross-file delta against a
+−2.622s actual lap-time gap.
+
+## Live from the sim
+
+**Connect to sim** reads the running session and does two things at once: drives
+the pit wall, and **records**. A practice session you watched but did not
+capture cannot be analysed afterwards, which defeats most of the point — so
+laps are written to the database as they complete.
+
+The source is swappable and the view cannot tell which it has: `ShmSource`
+reads shared memory, `ReplaySource` plays back a recording.
+
+Two honest limits in this first version:
+
+- **Distance is integrated** from speed using the sim's own `mDeltaTime` rather
+  than wall clock, and reset at each lap. Lap distance lives in the Scoring
+  buffer, which this reader does not decode yet; anchoring to `mLapDist` would
+  remove the drift entirely.
+- **No tyre data.** The wheel offsets are not derivable from the struct layout
+  this module has, and inventing them would fill the dashboard with
+  plausible-looking wrong numbers. The offset table stops at `mRearBrakeBias`
+  on purpose.
+
+The probe now validates **every** field the live reader depends on — speed,
+gear, RPM, throttle, brake, steering, fuel, brake bias, water temperature — so
+a layout mismatch is caught there rather than showing up as a believable but
+wrong dashboard.

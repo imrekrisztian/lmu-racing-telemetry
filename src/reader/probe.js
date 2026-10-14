@@ -48,12 +48,36 @@ function sanityCheck(snap) {
     const vehicleName = L.readFixedString(snap, L.VEHICLE0.mVehicleName, 64);
     const trackName = L.readFixedString(snap, L.VEHICLE0.mTrackName, 64);
 
+    // Every field the live reader depends on, so a layout mismatch is caught
+    // here rather than showing up as a plausible-but-wrong dashboard.
+    const d = (k) => snap.readDoubleLE(L.VEHICLE0[k]);
+    const speed = Math.hypot(d('mLocalVel'),
+        snap.readDoubleLE(L.VEHICLE0.mLocalVel + 8),
+        snap.readDoubleLE(L.VEHICLE0.mLocalVel + 16));
+    const gear = snap.readInt32LE(L.VEHICLE0.mGear);
+    const rpm = d('mEngineRPM');
+    const thr = d('mUnfilteredThrottle');
+    const brk = d('mUnfilteredBrake');
+    const steer = d('mUnfilteredSteering');
+    const fuel = d('mFuel');
+    const bias = d('mRearBrakeBias');
+    const water = d('mEngineWaterTemp');
+
     const checks = [
         ['mNumVehicles in 1..128', numVehicles >= 1 && numVehicles <= 128, numVehicles],
         ['mDeltaTime in 0.0005..0.5 s', deltaTime > 0.0005 && deltaTime < 0.5, deltaTime],
         ['mElapsedTime > 0', elapsed > 0, elapsed.toFixed(2)],
         ['mVehicleName is printable', /^[\x20-\x7E]{1,63}$/.test(vehicleName), JSON.stringify(vehicleName)],
         ['mTrackName is printable', /^[\x20-\x7E]{1,63}$/.test(trackName), JSON.stringify(trackName)],
+        ['speed 0..130 m/s', speed >= 0 && speed < 130, (speed * 3.6).toFixed(1) + ' km/h'],
+        ['mGear in -1..9', gear >= -1 && gear <= 9, gear],
+        ['mEngineRPM 0..20000', rpm >= 0 && rpm < 20000, Math.round(rpm)],
+        ['throttle 0..1', thr >= -0.01 && thr <= 1.01, thr.toFixed(3)],
+        ['brake 0..1', brk >= -0.01 && brk <= 1.01, brk.toFixed(3)],
+        ['steering -1..1', steer >= -1.01 && steer <= 1.01, steer.toFixed(3)],
+        ['mFuel 0..200 L', fuel >= 0 && fuel < 200, fuel.toFixed(1)],
+        ['mRearBrakeBias 0..1', bias >= 0 && bias <= 1, bias.toFixed(3)],
+        ['water temp 0..200 C', water > 0 && water < 200, water.toFixed(1)],
     ];
 
     return { checks, deltaTime, elapsed, numVehicles, vehicleName, trackName };

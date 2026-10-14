@@ -10,6 +10,22 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const { API_NAMES } = require('./api');
 
+// Helpers first: these are const, so using one before its declaration throws a
+// ReferenceError that kills the preload entirely -- and a dead preload looks
+// exactly like "not running in Electron" from the renderer's side.
+const invokeOk = (channel) => async (payload) => {
+    const res = await ipcRenderer.invoke(channel, payload);
+    if (!res?.ok) throw new Error(res?.error ?? `${channel} failed`);
+    return res.value;
+};
+
+// File dialogs need the window, so they live outside the generated surface.
+const invoke = (channel) => async () => {
+    const res = await ipcRenderer.invoke(channel);
+    if (!res?.ok) throw new Error(res?.error ?? `${channel} failed`);
+    return res.value;
+};
+
 const bridge = {};
 for (const name of API_NAMES) {
     bridge[name] = async (payload) => {
@@ -27,6 +43,12 @@ bridge.liveStart = async (payload) => {
     return res.value;
 };
 bridge.liveStop = () => ipcRenderer.invoke('live:stop');
+bridge.liveAvailable = invokeOk('live:available');
+bridge.liveConnect = async (payload) => {
+    const res = await ipcRenderer.invoke('live:connect', payload);
+    if (!res?.ok) throw new Error(res?.error ?? 'live:connect failed');
+    return res.value;
+};
 bridge.trackMap = async (payload) => {
     const res = await ipcRenderer.invoke('live:trackMap', payload);
     if (!res?.ok) throw new Error(res?.error ?? 'trackMap failed');
@@ -43,5 +65,9 @@ bridge.onLiveEnd = (cb) => {
     ipcRenderer.on('live:end', handler);
     return () => ipcRenderer.removeListener('live:end', handler);
 };
+
+bridge.openDatabase = invoke('file:openDatabase');
+bridge.pickReference = invoke('file:pickReference');
+bridge.currentDatabase = invoke('file:current');
 
 contextBridge.exposeInMainWorld('lmu', Object.freeze(bridge));

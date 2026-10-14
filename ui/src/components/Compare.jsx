@@ -15,15 +15,23 @@ export default function Compare({ track, lapA, lapB }) {
 
         (async () => {
             try {
+                // A reference lap can live in an ATTACHed file rather than this
+                // database, in which case the cross-file queries are used. Same
+                // mathematics, different source.
+                const ext = lapB?.external === true;
                 const [ta, tb, segs] = await Promise.all([
                     api.lapTrace({ lapId: lapA.lap_id }),
-                    lapB ? api.lapTrace({ lapId: lapB.lap_id }) : Promise.resolve(null),
+                    !lapB ? Promise.resolve(null)
+                        : ext ? api.referenceLapTrace({ lapId: lapB.lap_id })
+                              : api.lapTrace({ lapId: lapB.lap_id }),
                     api.trackSegments({ track }),
                 ]);
-                const d = lapB ? await api.lapDelta({ lapA: lapA.lap_id, lapB: lapB.lap_id }) : null;
-                const losses = lapB
-                    ? await api.segmentLosses({ track, lapA: lapA.lap_id, lapB: lapB.lap_id })
-                    : [];
+                const d = !lapB ? null
+                    : ext ? await api.referenceLapDelta({ lapA: lapA.lap_id, refLapId: lapB.lap_id })
+                          : await api.lapDelta({ lapA: lapA.lap_id, lapB: lapB.lap_id });
+                const losses = !lapB ? []
+                    : ext ? await api.referenceSegmentLosses({ track, lapA: lapA.lap_id, refLapId: lapB.lap_id })
+                          : await api.segmentLosses({ track, lapA: lapA.lap_id, lapB: lapB.lap_id });
                 if (!cancelled) setState({ loading: false, ta, tb, d, segs, losses });
             } catch (e) {
                 if (!cancelled) setState({ loading: false, error: e.message });
@@ -80,7 +88,9 @@ export default function Compare({ track, lapA, lapB }) {
                     <span><i className="swatch" style={{ background: '#38bdf8' }} />
                         lap {lapA.lap_num} · <b className="num">{lapTime(lapA.lap_time_s)}</b></span>
                     {lapB && <span><i className="swatch" style={{ background: '#f59e0b' }} />
-                        ref lap {lapB.lap_num} · <b className="num">{lapTime(lapB.lap_time_s)}</b></span>}
+                        {lapB.external ? '◆ ' : ''}ref lap {lapB.lap_num}
+                        {lapB.external && lapB.driver ? ` (${lapB.driver})` : ''}
+                        {' · '}<b className="num">{lapTime(lapB.lap_time_s)}</b></span>}
                     {gap != null && <span>gap <b className={`num ${gap > 0 ? 'loss' : 'gain'}`}>{delta(gap)}s</b></span>}
                 </div>
             </div>

@@ -48,15 +48,46 @@ const TELEMETRY = {
 };
 
 // rF2VehicleTelemetry, offsets relative to the start of one vehicle entry.
+//
+// Derived from the struct's declaration order under pack(4): long is 4 bytes,
+// double is 8 but aligns to 4, rF2Vec3 is three doubles (24 bytes).
+//
+// THE TABLE STOPS AT mRearBrakeBias ON PURPOSE. The real header carries many
+// more fields between it and mWheels -- downforce, dent severity, impact data,
+// compound indices and so on -- and this module does not have their exact
+// declaration order. Computing wheel offsets without that would produce
+// numbers that look plausible and are wrong, which is worse than not having
+// them. Tyre data is therefore absent from the live reader until the probe
+// confirms the layout against the installed plugin's own rF2Data.h.
 const VEHICLE = {
-    mID: 0,            // int32
-    mDeltaTime: 4,     // double  <- physics sample interval, the number we want
-    mElapsedTime: 12,  // double
-    mLapNumber: 20,    // int32
-    mLapStartET: 24,   // double
-    mVehicleName: 32,  // char[64]
-    mTrackName: 96,    // char[64]
-    mPos: 160,         // 3 x double
+    mID: 0,                   // long
+    mDeltaTime: 4,            // double  <- physics sample interval
+    mElapsedTime: 12,         // double
+    mLapNumber: 20,           // long
+    mLapStartET: 24,          // double
+    mVehicleName: 32,         // char[64]
+    mTrackName: 96,           // char[64]
+    mPos: 160,                // rF2Vec3
+    mLocalVel: 184,           // rF2Vec3  <- speed is this vector's magnitude
+    mLocalAccel: 208,         // rF2Vec3
+    mOri: 232,                // rF2Vec3[3]
+    mLocalRot: 304,           // rF2Vec3
+    mLocalRotAccel: 328,      // rF2Vec3
+    mGear: 352,               // long
+    mEngineRPM: 356,          // double
+    mEngineWaterTemp: 364,    // double, already Celsius
+    mEngineOilTemp: 372,      // double, already Celsius
+    mClutchRPM: 380,          // double
+    mUnfilteredThrottle: 388, // double 0..1
+    mUnfilteredBrake: 396,    // double 0..1
+    mUnfilteredSteering: 404, // double -1..1
+    mUnfilteredClutch: 412,   // double 0..1
+    mFilteredThrottle: 420,   // double
+    mFilteredBrake: 428,      // double
+    mFilteredSteering: 436,   // double
+    mFilteredClutch: 444,     // double
+    mFuel: 452,               // double, litres
+    mRearBrakeBias: 460,      // double, rear fraction
 };
 
 // Absolute offsets for vehicle 0, which is all the probe needs.
