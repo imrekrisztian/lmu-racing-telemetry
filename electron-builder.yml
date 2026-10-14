@@ -1,0 +1,52 @@
+appId: tools.lmu.racing-telemetry
+productName: LMU Racing Telemetry
+copyright: Copyright © 2026 Krisztián Imre
+
+directories:
+  output: release
+  buildResources: build
+
+# Ship only what the app actually needs at runtime. The test suite, the
+# synthetic source's dev helpers and the capture scripts stay out.
+files:
+  - src/**/*
+  - db/**/*
+  - ui/dist/**/*
+  - package.json
+  - '!**/*.map'
+  - '!test/**'
+  - '!scripts/dev.js'
+
+# Native modules must live outside the asar: koffi dlopen()s its own binary and
+# DuckDB loads a platform .node, and neither can be read from inside an archive.
+asarUnpack:
+  - '**/node_modules/koffi/**'
+  - '**/node_modules/@duckdb/**'
+
+win:
+  target:
+    # NSIS is the click-to-install route; portable is a single exe that needs
+    # no install at all, which suits dropping it on a sim rig.
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: ${productName} ${version} ${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: LMU Racing Telemetry
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  category: public.app-category.sports
+
+linux:
+  target: [AppImage]
+  category: Game

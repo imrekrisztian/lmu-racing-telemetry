@@ -8,9 +8,9 @@ node_modules/
 
 # build output
 dist/
-build/
 out/
 ui/dist/
+release/
 
 # local config / secrets
 .env

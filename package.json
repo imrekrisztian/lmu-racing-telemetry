@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Telemetry, strategy and engineering tool for Le Mans Ultimate",
-  "main": "src/reader/probe.js",
+  "main": "src/app/main.js",
   "scripts": {
     "probe": "node src/reader/probe.js",
     "probe:scoring": "node src/reader/probe.js --buffer Scoring",
@@ -12,7 +12,10 @@
     "seed": "node scripts/seed.js",
     "ui:build": "vite build --config ui/vite.config.mjs",
     "app:dev": "node scripts/dev.js",
-    "app": "npm run ui:build && electron src/app/main.js"
+    "app": "npm run ui:build && electron src/app/main.js",
+    "dist": "npm run ui:build && electron-builder --publish never",
+    "dist:win": "npm run ui:build && electron-builder --win --publish never",
+    "dist:dir": "npm run ui:build && electron-builder --dir --publish never"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.6-r.1",
@@ -30,6 +33,7 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",
     "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
     "vite": "^8.3.4"
   },
   "engines": {

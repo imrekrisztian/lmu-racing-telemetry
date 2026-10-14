@@ -713,3 +713,31 @@ With no database argument the app uses `%APPDATA%\lmu-racing-telemetry\telemetry
 3. `npm test` should pass (197 tests, none of which need the sim).
 4. `npm run app -- demo.duckdb` to confirm the UI runs before any live data
    exists.
+
+### A click-and-run installer
+
+```
+npm run dist:win     :: on Windows — produces an installer and a portable exe
+npm run dist         :: for the host platform
+```
+
+Output lands in `release/`:
+
+- **`LMU Racing Telemetry <version> x64.exe`** — NSIS installer. Choose the
+  install location, gets a Start Menu and desktop shortcut.
+- **`LMU Racing Telemetry <version> x64.exe`** (portable) — a single
+  executable that installs nothing. Handy for dropping straight onto a sim rig.
+
+**Build it on Windows, or let CI do it.** Cross-building from macOS or Linux
+produces an app that launches and then fails, because DuckDB ships one binding
+package per platform and npm installs only the one matching the host — so the
+database engine would simply be absent. koffi bundles every platform, DuckDB
+does not.
+
+`.github/workflows/build.yml` builds on a `windows-latest` runner: push a tag
+(`git tag v0.1.0 && git push --tags`) and the installer is attached to a GitHub
+release. `workflow_dispatch` builds one on demand without tagging.
+
+The packaged app has been verified end to end — native modules load, the schema
+and renderer are read from inside the asar, and the UI renders — though so far
+only in the macOS build, since that is what this machine can run.
