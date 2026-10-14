@@ -182,3 +182,48 @@ within 2% of track length, and `lap_delta()` accumulates 1.207s against a
 
 Ingest runs at ~138k rows/s, against the ~90 rows/s a 90 Hz session produces.
 Throughput is not going to be the constraint.
+
+## Strategy planner
+
+```
+npm run strategy -- --duration 6h --lap 3:32 --class Hyper --consumption 4.4 \
+  --pit-delta 30 --refuel 3.0 --tyre-change 26 --drivers "A,B"
+```
+
+Prints a stint sheet: stint ranges, loads, driver rotation, per-stop time and
+total race time.
+
+### The rule that drives everything
+
+**Hypercar and LMGT3 run to a Virtual Energy allowance; LMP2/LMP3/GTE run to
+the fuel tank.** `limiterFor(carClass)` is a single lookup the planner applies
+itself, rather than a flag callers can get wrong. Virtual Energy exists only on
+the REST API (`:6397`) — it is not in shared memory, which is why the strategy
+module takes measured consumption as an input instead of reading telemetry.
+
+### Two things most planners get wrong
+
+**Timed races are circular.** Laps completed depend on time spent in the pits,
+which depends on the number of stops, which depends on laps completed. It is
+solved by iterating to a fixed point — typically 2–3 passes.
+
+**Refuel time is not a constant.** It scales with the load taken on, so a stop
+after a short stint is genuinely cheaper. Using a flat per-stop figure
+overstates short-stint strategies.
+
+Stints are also split *evenly* rather than max-then-remainder: that avoids
+finishing the race on a two-lap splash, and carries less weight throughout.
+
+### Live mode
+
+`assessLive()` recomputes against what the car is actually consuming:
+
+```
+LIVE  stint 1 · 22 laps left on this load (through lap 22, plan says 25)
+  Consuming 4.50%VE/lap, over plan by 12.5%.
+  Short by 3 laps: the load runs out on lap 22, plan says pit on 25.
+  Save 0.50%VE/lap (target 4.00) to make the window, or pit 3 early.
+```
+
+That last line is the one a static calculator cannot produce, and it feeds
+straight into lift-and-coast coaching.
