@@ -1,0 +1,181 @@
+'use strict';
+
+// Everything the UI can ask for.
+//
+// Deliberately a plain module over a DuckDB connection rather than a pile of
+// ipcMain handlers: the renderer boundary is a thin forwarder, and all of this
+// stays unit-testable without launching a browser window.
+//
+// Chart series come back COLUMNAR ([xs], [ys]) rather than as arrays of
+// objects. uPlot consumes that shape directly, and it serialises across the
+// IPC boundary at a fraction of the size.
+
+const A = require('../analysis/compare');
+const { deriveTrackSegments } = require('../analysis/corners');
+const E = require('../engineer/engine');
+const FB = require('../engineer/feedback');
+const { planRace } = require('../strategy/planner');
+const { assessLive } = require('../strategy/live');
+
+const rows = async (con, sql, params) =>
+    (await con.runAndReadAll(sql, params)).getRowObjects();
+const n = (v) => (v == null ? null : Number(v));
+
+async function listSessions(con) {
+    const r = await rows(con, `
+        SELECT s.session_id, s.started_at, s.track, s.car, s.car_class, s.session_type,
+               s.driver, s.sample_rate_hz,
+               count(l.lap_id)                                   AS lap_count,
+               min(l.lap_time_s) FILTER (WHERE l.valid)          AS best_lap_s
+        FROM sessions s LEFT JOIN laps l USING (session_id)
+        GROUP BY ALL ORDER BY s.started_at DESC
+    `);
+    return r.map((x) => ({
+        session_id: String(x.session_id),
+        started_at: String(x.started_at),
+        track: String(x.track),
+        car: String(x.car),
+        car_class: x.car_class == null ? null : String(x.car_class),
+        session_type: x.session_type == null ? null : String(x.session_type),
+        driver: x.driver == null ? null : String(x.driver),
+        sample_rate_hz: n(x.sample_rate_hz),
+        lap_count: Number(x.lap_count),
+        best_lap_s: n(x.best_lap_s),
+    }));
+}
+
+async function listLaps(con, { sessionId = null, track = null } = {}) {
+    const where = [];
+    const params = [];
+    if (sessionId) { where.push('l.session_id = ?::UUID'); params.push(sessionId); }
+    if (track) { where.push('s.track = ?'); params.push(track); }
+
+    const r = await rows(con, `
+        SELECT l.lap_id, l.session_id, l.lap_num, l.lap_time_s, l.valid,
+               l.is_out_lap, l.is_in_lap, s.track, s.car, s.driver
+        FROM laps l JOIN sessions s USING (session_id)
+        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        ORDER BY s.started_at, l.lap_num
+    `, params);
+
+    return r.map((x) => ({
+        lap_id: String(x.lap_id),
+        session_id: String(x.session_id),
+        lap_num: Number(x.lap_num),
+        lap_time_s: n(x.lap_time_s),
+        valid: x.valid === true,
+        is_out_lap: x.is_out_lap === true,
+        is_in_lap: x.is_in_lap === true,
+        track: String(x.track),
+        car: String(x.car),
+        driver: x.driver == null ? null : String(x.driver),
+    }));
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function assertUuid(id, label) {
+    if (!UUID_RE.test(String(id))) throw new Error(`${label} is not a UUID`);
+    return id;
+}
+
+/** Columnar channel traces on the 1 m grid, ready to hand straight to uPlot. */
+async function lapTrace(con, { lapId }) {
+    assertUuid(lapId, 'lapId');
+    const r = await rows(con, `
+        SELECT dist_bin, speed_ms, throttle, brake, steer, gear
+        FROM lap_binned WHERE lap_id = '${lapId}' ORDER BY dist_bin
+    `);
+    const len = r.length;
+    const dist = new Float64Array(len), speed = new Float64Array(len);
+    const throttle = new Float64Array(len), brake = new Float64Array(len);
+    const steer = new Float64Array(len), gear = new Float64Array(len);
+    for (let i = 0; i < len; i++) {
+        dist[i] = Number(r[i].dist_bin);
+        speed[i] = Number(r[i].speed_ms) * 3.6;      // charts speak km/h
+        throttle[i] = Number(r[i].throttle ?? 0) * 100;
+        brake[i] = Number(r[i].brake ?? 0) * 100;
+        steer[i] = Number(r[i].steer ?? 0);
+        gear[i] = Number(r[i].gear ?? 0);
+    }
+    return {
+        dist: Array.from(dist), speed: Array.from(speed),
+        throttle: Array.from(throttle), brake: Array.from(brake),
+        steer: Array.from(steer), gear: Array.from(gear),
+    };
+}
+
+/** The delta trace: positive means lapA is losing time to lapB. */
+async function lapDelta(con, { lapA, lapB }) {
+    assertUuid(lapA, 'lapA'); assertUuid(lapB, 'lapB');
+    const r = await rows(con,
+        `SELECT dist_bin, delta_t_s FROM lap_delta('${lapA}', '${lapB}') ORDER BY dist_bin`);
+    return {
+        dist: r.map((x) => Number(x.dist_bin)),
+        delta: r.map((x) => Number(x.delta_t_s)),
+    };
+}
+
+async function trackSegments(con, { track }) {
+    const r = await rows(con,
+        `SELECT seg_num, kind, name, start_m, apex_m, end_m, min_speed_ms
+         FROM track_segments WHERE track = ? ORDER BY seg_num`, [track]);
+    return r.map((x) => ({
+        seg_num: Number(x.seg_num), kind: String(x.kind),
+        name: x.name == null ? null : String(x.name),
+        start_m: n(x.start_m), apex_m: n(x.apex_m), end_m: n(x.end_m),
+        min_speed_ms: n(x.min_speed_ms),
+    }));
+}
+
+async function segmentLosses(con, opts) { return A.segmentDeltas(con, opts); }
+async function deriveSegments(con, opts) { return deriveTrackSegments(con, opts); }
+
+async function runEngineer(con, opts) {
+    const { findings } = await E.analyse(con, opts);
+    return findings.map((f) => ({
+        advice_id: f.advice_id, rule_id: f.rule_id, seg_num: f.seg_num,
+        severity: f.severity, title: f.title, detail: f.detail, evidence: f.evidence,
+    }));
+}
+
+async function pastAdvice(con, { lapId }) {
+    assertUuid(lapId, 'lapId');
+    const r = await rows(con, `
+        SELECT a.advice_id, a.rule_id, a.severity, a.title, a.detail, a.evidence, a.created_at,
+               f.rating, f.applied, f.driver_note
+        FROM advice a LEFT JOIN feedback f USING (advice_id)
+        WHERE a.lap_id = '${lapId}'
+        -- Severity first. The engine ranks its findings carefully; replaying
+        -- them in insertion order would put a 'suggest' above a 'strong' and
+        -- quietly undo that ranking in the only place the driver sees it.
+        ORDER BY CASE a.severity WHEN 'strong' THEN 3 WHEN 'suggest' THEN 2 ELSE 1 END DESC,
+                 a.created_at DESC
+    `);
+    return r.map((x) => ({
+        advice_id: String(x.advice_id), rule_id: String(x.rule_id),
+        severity: String(x.severity), title: String(x.title),
+        detail: x.detail == null ? null : String(x.detail),
+        evidence: x.evidence == null ? null : JSON.parse(String(x.evidence)),
+        rating: n(x.rating),
+        applied: x.applied == null ? null : x.applied === true,
+        driver_note: x.driver_note == null ? null : String(x.driver_note),
+    }));
+}
+
+const recordFeedback = (con, opts) => FB.recordFeedback(con, opts);
+const ruleScores = (con) => FB.ruleScores(con);
+
+/** Strategy is pure computation -- no connection needed. */
+function strategy(_con, params) { return planRace(params); }
+function strategyLive(_con, params) { return assessLive(params); }
+
+const API = {
+    listSessions, listLaps, lapTrace, lapDelta, trackSegments, segmentLosses,
+    deriveSegments, runEngineer, pastAdvice, recordFeedback, ruleScores,
+    strategy, strategyLive,
+};
+
+/** Names the preload bridge exposes; keeps main and renderer in step. */
+const API_NAMES = Object.keys(API);
+
+module.exports = { ...API, API, API_NAMES };

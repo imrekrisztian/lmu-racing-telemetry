@@ -343,3 +343,45 @@ the advisor existed.
 Energy advice is LMU-specific: the cheapest place to save is immediately before
 a heavy braking zone, where lifting costs little because that speed was about
 to be thrown away anyway.
+
+## The app
+
+```
+npm run seed -- demo.duckdb     # synthetic data, so the UI works with no sim
+npm run app:dev -- demo.duckdb  # vite + electron, hot reload
+npm run app -- demo.duckdb      # build the renderer and run it
+```
+
+Three views: **Compare** (delta, speed, pedals, and where the time goes),
+**Engineer** (findings with feedback buttons), **Strategy** (live stint plan).
+
+### Architecture
+
+The main process owns the DuckDB connection and, on Windows, the reader. The
+renderer owns nothing but pixels. Everything crosses one narrow bridge, and
+both sides of it are generated from `API_NAMES` — an endpoint cannot exist in
+main but be missing from the preload.
+
+`src/app/api.js` is a plain module over a connection rather than a pile of
+`ipcMain` handlers, so the entire data layer is unit-testable without launching
+a window. IPC errors are *returned* as `{ ok:false, error }` rather than
+thrown, because an exception crossing that boundary arrives as an opaque string
+with no useful stack.
+
+Charts use **uPlot**: a lap is ~13,600 points per channel and these redraw on
+every cursor move. The crosshair is synced across all three charts, so hovering
+the delta trace also reads out speed and pedal positions at the same point on
+track. Corners are shaded behind every trace from `track_segments`, so a
+reading always has track context.
+
+### Verifying the UI without looking at it
+
+```
+LMU_SMOKE=/tmp/ui.png LMU_SMOKE_TAB=engineer electron src/app/main.js demo.duckdb
+```
+
+Renders, captures a PNG, exits. It caught two real bugs that tests had not:
+the reference trace was being aligned by array index instead of distance (which
+drifts whenever two laps have different bin counts), and advice was replaying
+in insertion order, putting `suggest` findings above `strong` ones and quietly
+undoing the engine's ranking in the one place the driver sees it.
