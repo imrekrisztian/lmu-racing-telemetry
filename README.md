@@ -274,3 +274,72 @@ the wrong corners.
 Braking-point σ is the most actionable consistency number — it localises
 inconsistency to a specific corner, and endurance races are won on spread
 rather than on a single best lap.
+
+## The engineer
+
+```js
+const { findings } = await analyse(con, { track, lapId, referenceLapId, lapIds });
+```
+
+```
+ENGINEER
+!! [seg 2] 3.9 km/h less apex speed
+     Minimum 119.7 km/h against the reference's 123.6 km/h. This corner feeds a
+     932m straight, so exit speed here is carried the whole way down it — worth
+     more than the raw time delta suggests.
+```
+
+A rule-based expert system, not a model. On day one there is no training data,
+and an advisor that cannot say *why* it said something cannot be scored or
+corrected. Every finding carries the numbers that produced it in `evidence`.
+**Rules compute; nothing invents a measurement.** A language layer, if one is
+added later, narrates from that evidence rather than replacing it.
+
+### What it reads off a trace
+
+Beyond the obvious reference comparisons (brake point, apex speed, throttle
+application), it computes what an engineer actually looks for:
+
+| Metric | What it means |
+|---|---|
+| `coast_m` | Neither pedal applied. The cheapest time on the lap to recover |
+| `brake_release_m` | Brakes fully off this far before the apex — the signature of no trail braking |
+| `plateau_m` | Distance at minimum speed. A quick corner is a V, not a U |
+| `brake_build_m` | First touch to peak pressure. Slow builds waste the start of the zone, where downforce is highest |
+| `throttle_drops` | Backing off after committing — traction-limited, or power before the car is pointed |
+| `steer_reversals` | Fighting the car. Over a stint this costs tyres more than it costs lap time |
+| front/rear tyre Δ | The balance read: hotter fronts are understeer, hotter rears are oversteer |
+
+Plus `entry.overdriving` — braking *later* than the reference yet *slower* at
+the apex, the classic case of buying entry speed back with interest on exit.
+It requires both conditions, because a later brake point with a faster apex is
+simply a better corner.
+
+### Exit priority
+
+A corner feeding a long straight is worth more than one feeding another corner,
+because exit speed is carried the whole way down it. Findings on high-priority
+corners are promoted in severity and say so. Engineers weight their attention
+that way; so does this.
+
+Output is **ranked and capped** — an engineer who says sixteen things has said
+nothing.
+
+### The feedback loop
+
+```
+RULE SCORECARD  (mean delta: negative = laps got quicker)
+  rule                            given  applied  improved  mean delta  rating
+  apex.slow                          4        3         3     -1.811s    1.00
+```
+
+`recordFeedback()` logs what the driver did with each piece of advice;
+`ruleScores()` ranks every rule by what actually happened to lap time
+afterwards. A rule that never moves the clock is one to retire, however
+sensible it sounds. **This accumulating record is the one asset a competitor
+cannot copy** — which is why `advice` and `feedback` were in the schema before
+the advisor existed.
+
+Energy advice is LMU-specific: the cheapest place to save is immediately before
+a heavy braking zone, where lifting costs little because that speed was about
+to be thrown away anyway.

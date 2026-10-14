@@ -165,3 +165,159 @@ async function consistency(con, { track, lapIds, brakeThreshold = 0.1 }) {
 }
 
 module.exports = { segmentDeltas, worstSegments, cornerMetrics, consistency };
+
+/**
+ * Technique metrics -- the things a race engineer actually reads off a trace,
+ * as opposed to the summary numbers above.
+ *
+ *  coast_m        throttle and brake both released. Pure wasted time; the
+ *                 single most actionable number in real telemetry coaching.
+ *  plateau_m      distance held within 2% of minimum speed. A good corner is
+ *                 a V, not a U -- a long plateau means speed was scrubbed off
+ *                 too early and the car is waiting to rotate.
+ *  brake_release_m  gap between the last brake input and the apex. A large
+ *                 gap means the brakes came fully off before turn-in, so
+ *                 there is no load on the front axle to rotate the car.
+ *                 That is the signature of no trail braking.
+ *  brake_build_m  distance from first brake touch to peak pressure. Long
+ *                 means a soft initial hit, wasting the most effective part
+ *                 of the braking zone where downforce is highest.
+ *  throttle_drops counts of the driver backing off after getting on power.
+ *                 Traction-limited exit, or hesitancy.
+ *  steer_reversals direction changes in steering input. Fighting the car,
+ *                 and a direct contributor to tyre wear over a stint.
+ *  overlap_m      both pedals meaningfully applied. Burns fuel and brakes.
+ */
+async function cornerTechnique(con, { track, lapId }) {
+    const r = await rows(con, `
+        WITH b AS (
+            SELECT dist_bin, speed_ms, throttle, brake, steer
+            FROM lap_binned WHERE lap_id = ${uuidLit(lapId)}
+        ),
+        seg AS (SELECT * FROM track_segments WHERE track = ? AND kind = 'corner'),
+        j AS (
+            SELECT seg.seg_num, b.dist_bin, b.speed_ms, b.throttle, b.brake, b.steer
+            FROM seg JOIN b ON b.dist_bin BETWEEN seg.start_m AND seg.end_m
+        ),
+        apex AS (
+            SELECT seg_num, arg_min(dist_bin, speed_ms) AS apex_m, min(speed_ms) AS vmin
+            FROM j GROUP BY seg_num
+        ),
+        d AS (
+            SELECT j.*, a.apex_m, a.vmin,
+                   j.throttle - lag(j.throttle) OVER (PARTITION BY j.seg_num ORDER BY j.dist_bin) AS d_thr,
+                   j.steer    - lag(j.steer)    OVER (PARTITION BY j.seg_num ORDER BY j.dist_bin) AS d_steer
+            FROM j JOIN apex a USING (seg_num)
+        ),
+        d2 AS (
+            SELECT *, lag(d_steer) OVER (PARTITION BY seg_num ORDER BY dist_bin) AS prev_d_steer
+            FROM d
+        )
+        -- apex_m and vmin are constant within a segment, so they go in the
+        -- GROUP BY and are referenced directly: an aggregate cannot be nested
+        -- inside another aggregate's FILTER clause.
+        SELECT seg_num, apex_m, vmin,
+               count(*)                                                           AS length_m,
+               count(*) FILTER (WHERE throttle < 0.05 AND brake < 0.05)           AS coast_m,
+               count(*) FILTER (WHERE throttle > 0.2 AND brake > 0.2)             AS overlap_m,
+               count(*) FILTER (WHERE speed_ms <= vmin * 1.02)                    AS plateau_m,
+               max(brake)                                                         AS peak_brake,
+               max(dist_bin) FILTER (WHERE brake > 0.05)                          AS last_brake_m,
+               min(dist_bin) FILTER (WHERE brake > 0.05)                          AS first_brake_m,
+               arg_max(dist_bin, brake)                                           AS peak_brake_m,
+               count(*) FILTER (WHERE dist_bin > apex_m AND d_thr < -0.05)        AS throttle_drops,
+               count(*) FILTER (WHERE d_steer * prev_d_steer < 0
+                                  AND abs(d_steer) > 0.02)                        AS steer_reversals
+        FROM d2 GROUP BY seg_num, apex_m, vmin ORDER BY seg_num
+    `, [track]);
+
+    return r.map((x) => {
+        const apex = num(x.apex_m);
+        const lastBrake = num(x.last_brake_m);
+        const firstBrake = num(x.first_brake_m);
+        const peakBrake = num(x.peak_brake_m);
+        return {
+            seg_num: Number(x.seg_num),
+            apex_m: apex,
+            length_m: Number(x.length_m),
+            coast_m: Number(x.coast_m),
+            overlap_m: Number(x.overlap_m),
+            plateau_m: Number(x.plateau_m),
+            peak_brake: num(x.peak_brake),
+            // Positive: brakes fully released this far BEFORE the apex.
+            brake_release_m: lastBrake == null || apex == null ? null : apex - lastBrake,
+            brake_build_m: firstBrake == null || peakBrake == null ? null : peakBrake - firstBrake,
+            throttle_drops: Number(x.throttle_drops),
+            steer_reversals: Number(x.steer_reversals),
+        };
+    });
+}
+
+/**
+ * Tyre working temperatures, per axle and per side.
+ *
+ * The front/rear balance is the engineer's staple read: fronts consistently
+ * hotter than rears means the front axle is doing more sliding -- understeer.
+ * Rears hotter means the car is loose. It is a balance diagnosis that no
+ * single-wheel number gives you.
+ */
+async function tyreBalance(con, { lapId }) {
+    const [x] = await rows(con, `
+        SELECT
+          avg((tyre_temp_fl_in_c + tyre_temp_fl_mid_c + tyre_temp_fl_out_c)/3) AS fl,
+          avg((tyre_temp_fr_in_c + tyre_temp_fr_mid_c + tyre_temp_fr_out_c)/3) AS fr,
+          avg((tyre_temp_rl_in_c + tyre_temp_rl_mid_c + tyre_temp_rl_out_c)/3) AS rl,
+          avg((tyre_temp_rr_in_c + tyre_temp_rr_mid_c + tyre_temp_rr_out_c)/3) AS rr,
+          avg(brake_temp_fl_c) AS bt_fl, avg(brake_temp_fr_c) AS bt_fr,
+          avg(brake_temp_rl_c) AS bt_rl, avg(brake_temp_rr_c) AS bt_rr
+        FROM samples WHERE lap_id = ${uuidLit(lapId)}
+    `);
+    if (!x) return null;
+    const f = (num(x.fl) + num(x.fr)) / 2;
+    const r = (num(x.rl) + num(x.rr)) / 2;
+    return {
+        fl: num(x.fl), fr: num(x.fr), rl: num(x.rl), rr: num(x.rr),
+        frontMean: f, rearMean: r,
+        frontRearDelta: f - r,
+        brakeFront: (num(x.bt_fl) + num(x.bt_fr)) / 2,
+        brakeRear: (num(x.bt_rl) + num(x.bt_rr)) / 2,
+    };
+}
+
+/** Per-wheel tread profile, for pressure and camber reads. */
+async function tyreProfile(con, { lapId }) {
+    const [x] = await rows(con, `
+        SELECT
+          avg(tyre_temp_fl_in_c) fl_i, avg(tyre_temp_fl_mid_c) fl_m, avg(tyre_temp_fl_out_c) fl_o, avg(tyre_press_fl_kpa) fl_p,
+          avg(tyre_temp_fr_in_c) fr_i, avg(tyre_temp_fr_mid_c) fr_m, avg(tyre_temp_fr_out_c) fr_o, avg(tyre_press_fr_kpa) fr_p,
+          avg(tyre_temp_rl_in_c) rl_i, avg(tyre_temp_rl_mid_c) rl_m, avg(tyre_temp_rl_out_c) rl_o, avg(tyre_press_rl_kpa) rl_p,
+          avg(tyre_temp_rr_in_c) rr_i, avg(tyre_temp_rr_mid_c) rr_m, avg(tyre_temp_rr_out_c) rr_o, avg(tyre_press_rr_kpa) rr_p
+        FROM samples WHERE lap_id = ${uuidLit(lapId)}
+    `);
+    if (!x) return [];
+    return ['fl', 'fr', 'rl', 'rr'].map((w) => ({
+        wheel: w,
+        inner_c: num(x[`${w}_i`]), mid_c: num(x[`${w}_m`]), outer_c: num(x[`${w}_o`]),
+        pressure_kpa: num(x[`${w}_p`]),
+    }));
+}
+
+/** Length of the straight that follows each corner -- exit priority. */
+async function exitPriority(con, { track }) {
+    const segs = await rows(con,
+        `SELECT seg_num, kind, start_m, end_m FROM track_segments WHERE track = ? ORDER BY seg_num`, [track]);
+    const out = new Map();
+    for (let i = 0; i < segs.length; i++) {
+        if (String(segs[i].kind) !== 'corner') continue;
+        const next = segs[i + 1];
+        const len = next && String(next.kind) === 'straight'
+            ? num(next.end_m) - num(next.start_m) : 0;
+        out.set(Number(segs[i].seg_num), len);
+    }
+    return out;
+}
+
+module.exports.cornerTechnique = cornerTechnique;
+module.exports.tyreBalance = tyreBalance;
+module.exports.tyreProfile = tyreProfile;
+module.exports.exitPriority = exitPriority;

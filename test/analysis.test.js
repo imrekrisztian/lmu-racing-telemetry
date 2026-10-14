@@ -164,3 +164,73 @@ test('lap ids are validated before being inlined into SQL', async () => {
         /Not a UUID/
     );
 });
+
+// --- engineer integration (uses the same fixture) -------------------------
+
+const E = require('../src/engineer/engine.js');
+const FB = require('../src/engineer/feedback.js');
+
+test('technique metrics come back with physically sane ordering', async () => {
+    const A2 = require('../src/analysis/compare.js');
+    const tech = await A2.cornerTechnique(con, { track: TRACK, lapId: mine[1] });
+    assert.equal(tech.length, 8);
+    for (const t of tech) {
+        assert.ok(t.length_m > 0);
+        assert.ok(t.coast_m >= 0 && t.coast_m <= t.length_m);
+        assert.ok(t.plateau_m >= 0 && t.plateau_m <= t.length_m);
+        assert.ok(t.peak_brake >= 0 && t.peak_brake <= 1);
+        if (t.brake_build_m != null) assert.ok(t.brake_build_m >= 0, 'peak cannot precede first touch');
+    }
+});
+
+test('axle temperatures resolve to a balance figure', async () => {
+    const A2 = require('../src/analysis/compare.js');
+    const b = await A2.tyreBalance(con, { lapId: mine[1] });
+    assert.ok(b.frontMean > 0 && b.rearMean > 0);
+    assert.ok(Math.abs(b.frontRearDelta - (b.frontMean - b.rearMean)) < 1e-9);
+});
+
+test('analyse persists its findings with evidence attached', async () => {
+    const { findings } = await E.analyse(con, {
+        track: TRACK, lapId: mine[2], referenceLapId: ref[2], lapIds: mine, limit: 5,
+    });
+    assert.ok(findings.length > 0, 'a 4%-slower lap should draw comment');
+    assert.ok(findings.length <= 5, 'output is capped');
+
+    const stored = (await con.runAndReadAll(
+        `SELECT rule_id, severity, title, evidence FROM advice WHERE lap_id = '${mine[2]}'`
+    )).getRowObjects();
+    assert.equal(stored.length, findings.length);
+    for (const row of stored) {
+        const ev = JSON.parse(String(row.evidence));
+        assert.ok(Object.keys(ev).length > 0, 'every finding carries its numbers');
+        assert.ok(String(row.rule_id).length > 0);
+    }
+});
+
+test('the feedback loop scores rules by what actually happened to lap time', async () => {
+    const [adv] = (await con.runAndReadAll(
+        `SELECT advice_id, rule_id FROM advice WHERE lap_id = '${mine[2]}' LIMIT 1`)).getRowObjects();
+
+    // Advice given on a slow lap; the result lap is the quicker reference.
+    await FB.recordFeedback(con, {
+        adviceId: String(adv.advice_id), rating: 1, applied: true,
+        driverNote: 'braked later', resultLapId: ref[2],
+    });
+
+    const scores = await FB.ruleScores(con);
+    const row = scores.find((s) => s.rule_id === String(adv.rule_id));
+    assert.ok(row, 'the rule appears on the scorecard');
+    assert.ok(row.given >= 1);
+    assert.ok(row.applied >= 1);
+    assert.ok(row.meanDeltaS < 0, 'negative delta means the lap got quicker');
+    assert.equal(row.improved >= 1, true);
+});
+
+test('advice with no feedback yet scores as unanswered rather than as failure', async () => {
+    const scores = await FB.ruleScores(con);
+    const unanswered = scores.filter((s) => s.answered === 0);
+    for (const s of unanswered) {
+        assert.equal(s.meanDeltaS, null, 'no feedback means no verdict, not a bad verdict');
+    }
+});
