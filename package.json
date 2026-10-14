@@ -7,7 +7,7 @@
   "scripts": {
     "probe": "node src/reader/probe.js",
     "probe:scoring": "node src/reader/probe.js --buffer Scoring",
-    "test": "node test/smoke.js"
+    "test": "node test/smoke.js && node --test test/*.test.js"
   },
   "dependencies": {
     "@duckdb/node-api": "^1.5.6-r.1",
