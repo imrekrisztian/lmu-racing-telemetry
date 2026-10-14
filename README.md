@@ -631,3 +631,36 @@ the lap count.
 The schedule is the team-facing half: "lap 41" means nothing to someone setting
 an alarm in another timezone, so each handover resolves to a wall clock and a
 be-ready-by time fifteen minutes earlier.
+
+### Weather forecast and strategy adaptation
+
+A forecast tells you about **rain**. What decides a race is **wetness**, and
+they are not the same thing — so the forecast is run through the same
+first-order lag the track itself obeys, and crossovers are read off the
+projected wetness curve rather than off the rain.
+
+Measured on a 20-minute squall: **0 s to reach wet-tyre territory, 19 minutes
+to come back out of it.** That asymmetry is the entire reason crossover timing
+is a decision rather than an observation. The time constants (70 s wet-up,
+600 s dry-out) are the most load-bearing numbers in the module and they are
+**estimates** — they want calibrating per circuit against recorded sessions.
+
+**The adaptation question is never "when does it rain".** It is whether a stop
+already falls near enough to the crossover, because a tyre change at a stop you
+were making anyway is free, while one at a stop you would not have made costs
+the whole pit loss. Four outcomes:
+
+| | Meaning |
+|---|---|
+| `aligned` | A planned stop is already within ~7 min — fit the right tyre there, free |
+| `bring-forward` | Pull a stop earlier; free *only if* the following stint stays legal |
+| `extend` | Run longer to reach the crossover, within the stint limit |
+| `extra-stop` | Nothing reachable — costs the full pit loss, and says so |
+
+Three bugs found while building it, all of which made the advice look better
+than it was: the same stop was recommended for every crossover in turn
+(producing a plan that pits the same lap three times); a stop could be "brought
+forward" 49 laps and still reported as costing nothing, when moving it that far
+hands its laps to the next stint and breaks the limit; and the synthetic
+forecast was so volatile it produced four crossovers inside half an hour —
+weather no strategist would ever see.

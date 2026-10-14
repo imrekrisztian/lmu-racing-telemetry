@@ -4,6 +4,7 @@ import { duration, lapTime } from '../format.js';
 import Degradation from './Degradation.jsx';
 import FuelSaving from './FuelSaving.jsx';
 import Crew from './Crew.jsx';
+import Forecast from './Forecast.jsx';
 
 // Hypercar and LMGT3 burn a Virtual Energy allowance; LMP2 burns fuel. The
 // form follows the class so the units on screen are never the wrong ones.
@@ -95,6 +96,11 @@ export default function Strategy({ sessionId, track, lapId }) {
             </div>
 
             {error && <div className="err">{error}</div>}
+
+            {sessionId && plan && (
+                <Forecast sessionId={sessionId} plan={plan} lapTimeS={Number(form.lapTimeS)}
+                          pitLossS={Number(form.pitLaneDeltaS)} tyreChangeS={Number(form.tyreChangeS || 0)} />
+            )}
 
             {track && lapId && (
                 <FuelSaving track={track} lapId={lapId}

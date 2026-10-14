@@ -17,6 +17,8 @@ const FB = require('../engineer/feedback');
 const { planRace } = require('../strategy/planner');
 const DEG = require('../analysis/degradation');
 const LC = require('../strategy/lift-and-coast');
+const FC = require('../strategy/forecast');
+const { syntheticForecast } = require('../reader/synthetic-source');
 const { assessLive } = require('../strategy/live');
 
 const rows = async (con, sql, params) =>
@@ -292,6 +294,39 @@ async function liftAndCoast(con, { track, lapId, targetSaving, maxTimeLossS } = 
     };
 }
 
+/**
+ * Forecast, projected wetness, and what it means for the stops.
+ *
+ * Current wetness is taken from the last recorded conditions so the projection
+ * starts from where the track actually is -- a forecast applied to a dry track
+ * and to a soaked one give very different crossovers.
+ */
+async function forecast(con, { sessionId, horizonS = 7200, plan, currentLap = 1, lapTimeS,
+                               pitLossS, tyreChangeS, maxLapsPerStint } = {}) {
+    let currentWetness = 0;
+    let nowS = 0;
+    if (sessionId && UUID_RE.test(String(sessionId))) {
+        const [last] = await rows(con,
+            `SELECT at_s, wetness_avg FROM conditions WHERE session_id = ?::UUID
+             ORDER BY at_s DESC LIMIT 1`, [sessionId]);
+        if (last) { currentWetness = n(last.wetness_avg) ?? 0; nowS = n(last.at_s) ?? 0; }
+    }
+
+    const points = syntheticForecast({ fromS: nowS, horizonS });
+    const timeline = FC.projectWetness({ forecast: points, currentWetness, nowS });
+    const events = FC.crossoverEvents(timeline);
+
+    const adaptation = plan && lapTimeS > 0
+        ? FC.adaptStrategy({ plan, timeline, currentLap, lapTimeS, nowS,
+                             pitLossS, tyreChangeS, maxLapsPerStint })
+        : null;
+
+    return {
+        nowS, currentWetness, synthetic: true,
+        forecast: points, timeline, events, adaptation,
+    };
+}
+
 const recordFeedback = (con, opts) => FB.recordFeedback(con, opts);
 const ruleScores = (con) => FB.ruleScores(con);
 
@@ -302,7 +337,7 @@ function strategyLive(_con, params) { return assessLive(params); }
 const API = {
     listSessions, listLaps, lapTrace, lapDelta, trackSegments, segmentLosses,
     deriveSegments, runEngineer, pastAdvice, recordFeedback, ruleScores,
-    strategy, strategyLive, degradation, optimalStint, liftAndCoast,
+    strategy, strategyLive, degradation, optimalStint, liftAndCoast, forecast,
 };
 
 /** Names the preload bridge exposes; keeps main and renderer in step. */

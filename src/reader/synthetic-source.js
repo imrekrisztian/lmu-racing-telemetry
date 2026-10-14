@@ -214,3 +214,38 @@ function* syntheticFrames({
 }
 
 module.exports = { syntheticFrames, DEFAULT_TRACK, SCORING_HZ };
+
+/**
+ * A forward forecast, standing in for LMU's own until the REST client exists.
+ *
+ * The real thing comes from /rest/sessions/weather and the RepairAndRefuel
+ * garage screen. The shape here -- time offset plus rain, cloud and
+ * temperatures -- is what an adapter would map onto, so swapping the source
+ * does not touch anything downstream.
+ */
+function syntheticForecast({ fromS = 0, horizonS = 7200, stepS = 120, seed = 1 } = {}) {
+    const out = [];
+    // One substantial band and a lighter one much later. An earlier version
+    // put two close together, which produced four crossovers inside half an
+    // hour -- weather no strategist would ever see, and it made every action
+    // come back as an extra stop.
+    const bands = [
+        { at: fromS + 2600 * seed, width: 900, peak: 0.8 },
+        { at: fromS + 10800, width: 1200, peak: 0.4 },
+    ];
+    for (let t = fromS; t <= fromS + horizonS; t += stepS) {
+        const rain = Math.min(1, bands.reduce(
+            (n, b) => n + b.peak * Math.exp(-((t - b.at) ** 2) / (2 * b.width ** 2)), 0));
+        const cloud = Math.min(1, 0.18 + rain * 1.1);
+        out.push({
+            atS: t,
+            raining: rain,
+            cloud,
+            airTempC: 21.5 - cloud * 2.4,
+            trackTempC: 34 - cloud * 7 - rain * 6,
+        });
+    }
+    return out;
+}
+
+module.exports.syntheticForecast = syntheticForecast;
